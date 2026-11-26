@@ -105,8 +105,6 @@ class MainActivity : ComponentActivity() {
 
 // Tous les fichiers : certains téléphones ne reconnaissent pas le type .xlsm et le grisent
 private val XLSX_TYPES = arrayOf("*/*")
-    "application/vnd.ms-excel", "application/octet-stream"
-)
 
 @Composable
 fun App(vm: PortfolioViewModel) {
