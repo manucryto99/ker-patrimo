@@ -494,6 +494,16 @@ fun Surveiller(vm: PortfolioViewModel) {
                     Text(p.libelle, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text(listOfNotNull(p.isin, p.contrat.ifEmpty { null }).joinToString(" · ") +
                         (ecartHaut?.let { " · ${Portfolio.pct(it)} vs plus haut 1 an" } ?: ""), color = C.Discret, fontSize = 12.sp)
+                    // Frais annuels en % : frais courants du fonds + frais de gestion du contrat (assurance vie)
+                    val ct = contrats.firstOrNull { it.etablissement == p.etablissement && it.contrat == p.contrat }
+                    val fFonds = p.fraisAnnuels ?: 0.0
+                    val fContrat = if (p.enveloppe.contains("assurance", true)) ct?.fraisGestionUc ?: 0.0 else 0.0
+                    if (fFonds + fContrat > 0) Text(
+                        listOfNotNull(
+                            fFonds.takeIf { it > 0 }?.let { "fonds ${Portfolio.pctAbs(it, 2)}" },
+                            fContrat.takeIf { it > 0 }?.let { "contrat ${Portfolio.pctAbs(it, 2)}" }
+                        ).joinToString(" + ") + (if (fFonds > 0 && fContrat > 0) " = ${Portfolio.pctAbs(fFonds + fContrat, 2)}" else "") + " /an",
+                        color = C.Or, fontSize = 11.sp)
                 }
                 Column(horizontalAlignment = Alignment.End) {
                     Text(p.dernierCours?.let { Portfolio.eur(it, true) } ?: "—", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
