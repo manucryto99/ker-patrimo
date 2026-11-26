@@ -52,6 +52,7 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.OutlinedButton
 import fr.eq.patrimo.assistant.Etat
@@ -139,10 +140,10 @@ fun App(vm: PortfolioViewModel) {
             NavigationBar(containerColor = C.Carte) {
                 listOf(
                     Triple("Patrimoine", Icons.Default.Home, 0), Triple("Titres", Icons.AutoMirrored.Filled.List, 1),
-                    Triple("Surveiller", Icons.Default.Star, 4),
+                    Triple("Surveiller", Icons.Default.Star, 4), Triple("Fonds", Icons.Default.Search, 5),
                     Triple("Assistant", Icons.Default.Person, 2), Triple("Alertes", Icons.Default.Notifications, 3)
                 ).forEach { (label, icon, i) ->
-                    NavigationBarItem(selected = onglet == i, onClick = { onglet = i }, icon = { Icon(icon, label) }, label = { Text(label) })
+                    NavigationBarItem(selected = onglet == i, onClick = { onglet = i }, icon = { Icon(icon, label) }, label = { Text(label, fontSize = 10.sp, maxLines = 1) })
                 }
             }
         }
@@ -153,6 +154,7 @@ fun App(vm: PortfolioViewModel) {
                 1 -> Placements(vm)
                 2 -> Discussion(vm)
                 4 -> Surveiller(vm)
+                5 -> Catalogue(vm)
                 else -> Alertes(vm)
             }
         }
@@ -515,7 +517,7 @@ fun Surveiller(vm: PortfolioViewModel) {
             run {
                 val chez = (listOf(p) + toutes.filter { o -> o.id != p.id && p.isin != null && o.isin.equals(p.isin, true) })
                     .mapNotNull { it.contrat.ifBlank { it.etablissement }.ifBlank { null } }.distinct()
-                val vos = (contrats.map { it.contrat } + toutes.map { it.contrat }).filter { it.isNotBlank() }.distinct()
+                val vos = (contrats.map { it.contrat } + contrats.map { it.etablissement } + toutes.map { it.contrat }).filter { it.isNotBlank() }.distinct()
                 fun norm(s: String) = java.text.Normalizer.normalize(s, java.text.Normalizer.Form.NFD).replace(Regex("\\p{M}"), "").lowercase().trim()
                 val saisis = p.disponibilites?.split(',', ';', '\n')?.map { it.trim() }?.filter { it.isNotEmpty() }.orEmpty()
                 val saisisVos = saisis.filter { s -> vos.any { v -> norm(v).contains(norm(s)) || norm(s).contains(norm(v)) } }
@@ -523,7 +525,7 @@ fun Surveiller(vm: PortfolioViewModel) {
                 val vosListe = (chez + saisisVos).distinctBy { norm(it) }
                 if (p.type != "Crypto" && (vosListe.isNotEmpty() || autres.isNotEmpty())) Column(Modifier.padding(start = 50.dp, bottom = 4.dp)) {
                     if (vosListe.isNotEmpty()) Text("✓ Dans vos contrats : " + vosListe.joinToString(", "), color = C.Hausse, fontSize = 11.sp)
-                    if (autres.isNotEmpty()) Text("Ailleurs : " + autres.joinToString(", "), color = C.Discret, fontSize = 11.sp)
+                    if (autres.isNotEmpty()) Text("Ailleurs : " + autres.joinToString(", "), color = C.Orange, fontSize = 11.sp)
                 }
             }
             perfs[p.id]?.let { pf ->

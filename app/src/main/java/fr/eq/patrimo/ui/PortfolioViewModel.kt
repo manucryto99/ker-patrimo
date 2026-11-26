@@ -142,6 +142,42 @@ class PortfolioViewModel(app: Application) : AndroidViewModel(app) {
     val horizon = _horizon.asStateFlow()
     fun setHorizon(h: fr.eq.patrimo.domain.Horizon) { _horizon.value = h }
 
+    /** Listes de fonds proposées par chaque contrat (onglet « Fonds »). */
+    val catalogue = dao.observeCatalogue().stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    fun importerCatalogue(uri: Uri, etablissement: String, contrat: String) {
+        viewModelScope.launch {
+            _busy.value = true
+            val res = withContext(Dispatchers.IO) {
+                runCatching {
+                    val fonds = getApplication<Application>().contentResolver.openInputStream(uri)!!.use(fr.eq.patrimo.importer.CatalogueImporter::lire)
+                    if (fonds.isNotEmpty()) dao.insertCatalogue(fonds.map { (i, l) -> fr.eq.patrimo.data.FondsCatalogue(contrat, i, l, etablissement) })
+                    fonds.size
+                }
+            }
+            _busy.value = false
+            _info.value = res.fold({ n -> if (n == 0) "Aucun ISIN trouvé dans ce fichier (Excel, CSV ou texte attendu)" else "$n fonds ajoutés à $contrat" },
+                { "Lecture impossible : ${it.message}" })
+        }
+    }
+
+    fun viderCatalogue(contrat: String) { viewModelScope.launch { dao.viderCatalogue(contrat); _info.value = "Liste de $contrat effacée" } }
+
+    /** Ajoute un fonds du catalogue à « À surveiller », avec le contrat qui le propose. */
+    fun surveillerFonds(isin: String, libelle: String, contrat: fr.eq.patrimo.data.Contrat) {
+        viewModelScope.launch {
+            val existant = dao.positions().firstOrNull { it.aSurveiller && it.isin.equals(isin, true) }
+            if (existant != null) {
+                val d = (existant.disponibilites?.split(',')?.map { it.trim() }.orEmpty() + contrat.contrat).filter { it.isNotEmpty() }.distinct()
+                dao.update(existant.copy(disponibilites = d.joinToString(", ")))
+            } else dao.insert(fr.eq.patrimo.data.Position(enveloppe = contrat.enveloppe, etablissement = contrat.etablissement, contrat = contrat.contrat,
+                libelle = libelle, isin = isin, type = if (contrat.enveloppe.contains("assurance", true)) "OPCVM/UC" else "ETF",
+                quantite = 0.0, pru = 0.0, valeurManuelle = null, tauxAnnuel = null, dateAchat = null, fraisAnnuels = null, notes = null,
+                aSurveiller = true))
+            _info.value = "« $libelle » ajouté à « À surveiller »"
+        }
+    }
+
     private val _busy = MutableStateFlow(false)
     val busy = _busy.asStateFlow()
     private val _info = MutableStateFlow<String?>(null)

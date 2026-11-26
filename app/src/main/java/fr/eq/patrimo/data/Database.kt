@@ -46,6 +46,15 @@ data class Position(
  * Un contrat / compte (onglet « Contrats » du modèle Excel) et son barème de frais.
  * Clé : établissement + contrat, comme dans l'onglet « Positions ».
  */
+/** Fonds proposé par un contrat (liste importée depuis la liste des supports de l'assureur / courtier). */
+@Entity(tableName = "catalogue", primaryKeys = ["contrat", "isin"])
+data class FondsCatalogue(
+    val contrat: String,
+    val isin: String,
+    val libelle: String,
+    val etablissement: String
+)
+
 @Entity(tableName = "contrats", primaryKeys = ["etablissement", "contrat"])
 data class Contrat(
     val etablissement: String,
@@ -128,6 +137,15 @@ abstract class PortfolioDao {
     @Query("SELECT MIN(epochDay) FROM prices WHERE isin = :isin")
     abstract suspend fun oldestPrice(isin: String): Long?
 
+    @Query("SELECT * FROM catalogue ORDER BY libelle")
+    abstract fun observeCatalogue(): kotlinx.coroutines.flow.Flow<List<FondsCatalogue>>
+
+    @androidx.room.Insert(onConflict = androidx.room.OnConflictStrategy.REPLACE)
+    abstract suspend fun insertCatalogue(items: List<FondsCatalogue>)
+
+    @Query("DELETE FROM catalogue WHERE contrat = :contrat")
+    abstract suspend fun viderCatalogue(contrat: String)
+
     @Query("SELECT COUNT(*) FROM prices")
     abstract suspend fun priceCount(): Int
 
@@ -138,7 +156,7 @@ abstract class PortfolioDao {
     abstract suspend fun snapshotsSince(from: Long): List<Snapshot>
 }
 
-@Database(entities = [Position::class, Contrat::class, PricePoint::class, Snapshot::class], version = 5, exportSchema = false)
+@Database(entities = [Position::class, Contrat::class, PricePoint::class, Snapshot::class, FondsCatalogue::class], version = 6, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun dao(): PortfolioDao
 
@@ -150,6 +168,11 @@ abstract class AppDatabase : RoomDatabase() {
                 .addMigrations(object : androidx.room.migration.Migration(4, 5) {
                     override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
                         db.execSQL("ALTER TABLE positions ADD COLUMN disponibilites TEXT")
+                    }
+                })
+                .addMigrations(object : androidx.room.migration.Migration(5, 6) {
+                    override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                        db.execSQL("CREATE TABLE IF NOT EXISTS `catalogue` (`contrat` TEXT NOT NULL, `isin` TEXT NOT NULL, `libelle` TEXT NOT NULL, `etablissement` TEXT NOT NULL, PRIMARY KEY(`contrat`, `isin`))")
                     }
                 })
                 .fallbackToDestructiveMigration() // phase de développement : on réimporte l'Excel

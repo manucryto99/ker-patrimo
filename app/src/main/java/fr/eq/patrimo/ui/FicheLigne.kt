@@ -116,8 +116,22 @@ fun FicheLigne(
                 }
                 OutlinedTextField(notes, { notes = it }, label = { Text("Notes") }, modifier = Modifier.fillMaxWidth())
                 if (type != "Crypto") {
-                    OutlinedTextField(dispo, { dispo = it }, label = { Text("Disponible aussi dans (contrats, séparés par des virgules)") },
-                        modifier = Modifier.fillMaxWidth())
+                    // Plusieurs contrats possibles : vos contrats en boutons (vert), autres établissements en texte libre (orange)
+                    val vosNoms = contrats.filter { !it.enveloppe.contains("crypto", true) }.map { it.contrat }.distinct()
+                    val elements = dispo.split(',', ';').map { it.trim() }.filter { it.isNotEmpty() }
+                    val coches = elements.filter { e -> vosNoms.any { it.equals(e, true) } }
+                    var autres by remember { mutableStateOf(elements.filterNot { e -> vosNoms.any { it.equals(e, true) } }.joinToString(", ")) }
+                    fun maj(c: List<String>, a: String) { dispo = (c + a.split(',', ';').map { it.trim() }.filter { it.isNotEmpty() }).distinct().joinToString(", ") }
+                    Text("Disponible dans vos contrats", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        vosNoms.forEach { nom ->
+                            val on = coches.any { it.equals(nom, true) }
+                            FilterChip(selected = on, onClick = { maj(if (on) coches.filterNot { it.equals(nom, true) } else coches + nom, autres) },
+                                label = { Text(nom, fontSize = 12.sp) })
+                        }
+                    }
+                    OutlinedTextField(autres, { autres = it; maj(coches, it) },
+                        label = { Text("Autres banques / contrats (séparés par des virgules)") }, modifier = Modifier.fillMaxWidth())
                     if (isin.isNotBlank()) TextButton(onClick = {
                         val q = java.net.URLEncoder.encode("${isin.trim()} assurance vie contrats disponible", "UTF-8")
                         runCatching { ctx.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse("https://www.google.com/search?q=$q"))) }

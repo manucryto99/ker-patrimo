@@ -33,6 +33,7 @@ object C {
     val Texte = Color(0xFFEEF1F6)
     val Discret = Color(0xFF8A92A1)
     val Or = Color(0xFFD9B46A)
+    val Orange = Color(0xFFF2994A)
     val OrDoux = Color(0xFF2A2418)
     val Hausse = Color(0xFF3CCF91)
     val Baisse = Color(0xFFFF6B5E)

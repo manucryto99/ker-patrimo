@@ -20,6 +20,10 @@ object XlsxReader {
             val path = XlsxReader.findSheetPath(files, nom, premierSiAbsent) ?: return null
             return XlsxReader.toRows(XlsxReader.parseSheet(files.getValue(path), shared))
         }
+        /** Lignes brutes de tous les onglets (pour les listes de fonds : on cherche les ISIN partout). */
+        fun toutesLignes(): List<Map<Int, String>> =
+            files.keys.filter { it.startsWith("xl/worksheets/sheet") && it.endsWith(".xml") }.sorted()
+                .flatMap { XlsxReader.parseSheet(files.getValue(it), shared) }
         /** Lignes brutes d'un onglet (n° de colonne à partir de 0 -> texte), sans en-tête. Nom exact, casse ignorée. */
         fun lignesBrutes(nom: String): List<Map<Int, String>>? {
             val path = XlsxReader.findSheetPath(files, nom, false) ?: return null
