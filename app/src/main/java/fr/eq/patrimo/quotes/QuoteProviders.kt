@@ -81,6 +81,19 @@ class YahooProvider : QuoteProvider {
         }
     }
 
+    /** Cours intraday (timestamp en secondes, clôture de chaque intervalle). */
+    fun intraday(symbol: String, range: String, interval: String): List<Pair<Long, Double>> {
+        val s = URLEncoder.encode(symbol, "UTF-8")
+        val (_, body) = Http.get("https://query1.finance.yahoo.com/v8/finance/chart/$s?range=$range&interval=$interval") ?: return emptyList()
+        val res = runCatching { JSONObject(body).getJSONObject("chart").getJSONArray("result").getJSONObject(0) }.getOrNull() ?: return emptyList()
+        val ts = res.optJSONArray("timestamp") ?: return emptyList()
+        val closes = res.optJSONObject("indicators")?.optJSONArray("quote")?.optJSONObject(0)?.optJSONArray("close") ?: return emptyList()
+        return (0 until ts.length()).mapNotNull { i ->
+            val c = closes.optDouble(i)
+            if (c.isNaN()) null else ts.getLong(i) to c
+        }
+    }
+
     /** Taux EUR -> devise (ex. 1,08 pour USD). */
     fun eurRate(currency: String): Double? =
         if (currency == "EUR") 1.0 else quote(Listing("EUR$currency=X", name))?.price

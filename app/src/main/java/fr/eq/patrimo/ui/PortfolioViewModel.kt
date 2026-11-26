@@ -27,6 +27,8 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.LocalDate
@@ -70,11 +72,35 @@ class PortfolioViewModel(app: Application) : AndroidViewModel(app) {
     val courbe: StateFlow<List<PointCourbe>> = combine(lignes, _periode, historyVersion, _categorie, _comptes) { l, p, _, c, sel ->
             l.filter { (c == null || it.p.enveloppe == c) && (sel.isEmpty() || it.p.contrat in sel) } to p }
         .mapLatest { (l, p) ->
+            if (p.intraday) return@mapLatest courbeIntraday(l, p)
             withContext(Dispatchers.IO) {
                 val depuis = LocalDate.now().toEpochDay() - p.jours
                 Portfolio.courbe(l, dao.pricesSince(depuis), dao.snapshotsSince(depuis), depuis)
             }
         }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    private val yahoo = fr.eq.patrimo.quotes.YahooProvider()
+    /** Cache des séries intraday : (symbole, période) -> (heure de chargement, série). */
+    private val cacheIntraday = java.util.concurrent.ConcurrentHashMap<Pair<String, Periode>, Pair<Long, List<Pair<Long, Double>>>>()
+
+    private suspend fun courbeIntraday(l: List<Ligne>, p: Periode): List<PointCourbe> = withContext(Dispatchers.IO) {
+        val maintenant = System.currentTimeMillis() / 1000
+        val symboles = l.filter { it.estCote && it.p.source == "Yahoo" }.mapNotNull { it.p.symbole }.distinct()
+        val (range, interval) = if (p == Periode.H1) "1d" to "1m" else "5d" to "5m"
+        val series = kotlinx.coroutines.coroutineScope {
+            symboles.map { s ->
+                async {
+                    val c = cacheIntraday[s to p]
+                    val serie = if (c != null && maintenant - c.first < 120) c.second
+                        else runCatching { yahoo.intraday(s, range, interval) }.getOrDefault(emptyList()).also { cacheIntraday[s to p] = maintenant to it }
+                    s to serie
+                }
+            }.awaitAll().toMap()
+        }
+        // Fenêtre glissante qui se termine à la dernière cotation connue (marchés fermés : dernière séance)
+        val fin = minOf(maintenant, series.values.mapNotNull { it.lastOrNull()?.first }.maxOrNull() ?: maintenant)
+        Portfolio.courbeIntraday(l, series, fin - p.secondes, maintenant)
+    }
 
     private val _busy = MutableStateFlow(false)
     val busy = _busy.asStateFlow()

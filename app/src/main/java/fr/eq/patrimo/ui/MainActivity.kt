@@ -38,6 +38,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -188,28 +189,17 @@ fun Accueil(vm: PortfolioViewModel) {
         if (categorie != null) {
             val parContrat = lignesCat.groupBy { it.p.contrat }.map { (c, l) -> Triple(c, l.sumOf { it.valeur }, l.sumOf { it.investi } to l.sumOf { it.gain }) }
                 .sortedByDescending { it.second }
-            Column(Modifier.padding(top = 10.dp).fillMaxWidth().background(C.Carte, RoundedCornerShape(16.dp)).padding(vertical = 4.dp)) {
-                Row(Modifier.fillMaxWidth().clickable { vm.tousLesComptes() }.padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text(if (comptes.isEmpty()) "✓ Tous les contrats" else "Tous les contrats", fontWeight = FontWeight.SemiBold, fontSize = 14.sp,
-                        color = if (comptes.isEmpty()) C.Or else C.Texte, modifier = Modifier.weight(1f))
-                    Text("${parContrat.size} contrats", color = C.Discret, fontSize = 12.sp)
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp), contentPadding = PaddingValues(top = 2.dp)) {
+                item {
+                    FilterChip(selected = comptes.isEmpty(), onClick = { vm.tousLesComptes() }, label = { Text("Tous", fontSize = 12.sp) },
+                        modifier = Modifier.height(30.dp))
                 }
-                parContrat.forEach { (nom, valeur, ig) ->
+                items(parContrat) { (nom, _, ig) ->
                     val (inv, g) = ig
-                    val choisi = nom in comptes
-                    Row(Modifier.fillMaxWidth().clickable { vm.basculerCompte(nom) }
-                        .background(if (choisi) C.OrDoux else androidx.compose.ui.graphics.Color.Transparent)
-                        .padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Box(Modifier.size(18.dp).border(1.5.dp, if (choisi) C.Or else C.Discret, RoundedCornerShape(5.dp))
-                            .background(if (choisi) C.Or else androidx.compose.ui.graphics.Color.Transparent, RoundedCornerShape(5.dp)), contentAlignment = Alignment.Center) {
-                            if (choisi) Text("✓", color = androidx.compose.ui.graphics.Color.Black, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                        }
-                        Text(nom, fontSize = 14.sp, modifier = Modifier.padding(start = 10.dp).weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Column(horizontalAlignment = Alignment.End) {
-                            Text(Portfolio.eur(valeur), fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                            Text(Portfolio.pct(if (inv > 0) g / inv else 0.0), color = C.signe(g), fontSize = 12.sp)
-                        }
-                    }
+                    FilterChip(selected = nom in comptes, onClick = { vm.basculerCompte(nom) }, modifier = Modifier.height(30.dp), label = {
+                        Text(nom, fontSize = 12.sp, maxLines = 1)
+                        Text(" " + Portfolio.pct(if (inv > 0) g / inv else 0.0), fontSize = 11.sp, color = C.signe(g), maxLines = 1)
+                    })
                 }
             }
         }
@@ -229,10 +219,18 @@ fun Accueil(vm: PortfolioViewModel) {
         CourbeChart(courbe, Modifier.fillMaxWidth().height(200.dp).padding(vertical = 12.dp))
         if (courbe.isNotEmpty()) Row(Modifier.fillMaxWidth()) {
             val f = DateTimeFormatter.ofPattern("d MMM yyyy", Locale.FRANCE)
-            Text(LocalDate.ofEpochDay(courbe.first().epochDay).format(f), color = C.Discret, fontSize = 11.sp)
-            Spacer(Modifier.weight(1f)); Text("Aujourd'hui", color = C.Discret, fontSize = 11.sp)
+            val debut = courbe.first().epochSec
+            if (debut != null) {
+                val h = DateTimeFormatter.ofPattern("EEE HH:mm", Locale.FRANCE)
+                Text(java.time.Instant.ofEpochSecond(debut).atZone(java.time.ZoneId.systemDefault()).format(h), color = C.Discret, fontSize = 11.sp)
+                Spacer(Modifier.weight(1f)); Text("Maintenant", color = C.Discret, fontSize = 11.sp)
+            } else {
+                Text(LocalDate.ofEpochDay(courbe.first().epochDay).format(f), color = C.Discret, fontSize = 11.sp)
+                Spacer(Modifier.weight(1f)); Text("Aujourd'hui", color = C.Discret, fontSize = 11.sp)
+            }
         }
-        Row(Modifier.padding(vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        if (periode.intraday && courbe.size < 2) Text("Cours intraday indisponibles pour l'instant (hors ligne ?)", color = C.Discret, fontSize = 12.sp)
+        Row(Modifier.padding(vertical = 10.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             Periode.entries.forEach { p -> FilterChip(selected = p == periode, onClick = { vm.setPeriode(p) }, label = { Text(p.label) }) }
         }
         Text("Courbe à composition constante (positions actuelles)", color = C.Discret, fontSize = 11.sp, modifier = Modifier.padding(bottom = 10.dp))

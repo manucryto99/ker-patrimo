@@ -32,11 +32,14 @@ data class Ligne(
     val varJour: Double? get() = p.dernierCours?.let { c -> p.coursVeille?.takeIf { it > 0 }?.let { c / it - 1 } }
 }
 
-enum class Periode(val label: String, val jours: Long) {
-    S1("1S", 7), M1("1M", 31), M6("6M", 183), A1("1A", 365), A5("5A", 1826)
+enum class Periode(val label: String, val jours: Long, val secondes: Long = 0) {
+    H1("1H", 0, 3_600), J1("1J", 1, 86_400),
+    S1("1S", 7), M1("1M", 31), M6("6M", 183), A1("1A", 365), A5("5A", 1826);
+    /** 1H et 1J : courbe tracée avec les cours intraday (minute / 5 minutes). */
+    val intraday: Boolean get() = secondes > 0
 }
 
-data class PointCourbe(val epochDay: Long, val valeur: Double)
+data class PointCourbe(val epochDay: Long, val valeur: Double, val epochSec: Long? = null)
 
 object Portfolio {
 
@@ -107,6 +110,29 @@ object Portfolio {
                 total += l.parts * (dernier[isin] ?: serie.first().close)
             }
             PointCourbe(jour, total)
+        }
+    }
+
+    /**
+     * Courbe intraday : chaque ligne cotée suit la variation relative de son cours (dernier point = valeur actuelle),
+     * les autres (fonds euros, UC à VL quotidienne, cash) restent constantes.
+     */
+    fun courbeIntraday(lignes: List<Ligne>, series: Map<String, List<Pair<Long, Double>>>, depuis: Long, maintenant: Long): List<PointCourbe> {
+        val utiles = series.filterValues { it.isNotEmpty() }
+        if (utiles.isEmpty()) return emptyList()
+        val grille = (utiles.values.flatMap { s -> s.map { it.first }.filter { it >= depuis } } + maintenant).toSortedSet().toList()
+        val pas = (grille.size / 240).coerceAtLeast(1)
+        val g = grille.filterIndexed { i, _ -> i % pas == 0 || i == grille.lastIndex }
+        return g.map { t ->
+            var total = 0.0
+            for (l in lignes) {
+                val s = l.p.symbole?.let { utiles[it] }
+                if (s == null || !l.estCote) { total += l.valeur; continue }
+                val dernier = s.last().second
+                val prix = s.lastOrNull { it.first <= t }?.second ?: s.first().second
+                total += if (dernier > 0) l.valeur * prix / dernier else l.valeur
+            }
+            PointCourbe(t / 86_400, total, t)
         }
     }
 
