@@ -104,7 +104,20 @@ Désigne une ligne par son ISIN quand tu le connais, sinon par son libellé, et 
                 Http.client.newCall(req).execute().use { r ->
                     val txt = r.body?.string() ?: ""
                     if (r.code == 429) return@use Message("assistant", "Limite gratuite atteinte (trop de questions en une minute). Réessayez dans une minute.")
-                    if (!r.isSuccessful) return@use Message("assistant", "Erreur de l'assistant (${r.code}). Vérifiez la clé, l'URL et le nom du modèle dans les réglages.")
+                    if (!r.isSuccessful) {
+                        // On affiche la raison donnée par le service, et on répond quand même hors ligne
+                        val raison = runCatching { JSONObject(txt).let { j -> j.optString("message").ifBlank { j.optJSONObject("error")?.optString("message") ?: "" }.ifBlank { j.optString("detail") } } }
+                            .getOrNull()?.takeIf { it.isNotBlank() } ?: txt.take(200)
+                        val conseil = when (r.code) {
+                            401 -> "Clé refusée : vérifiez qu'elle est copiée en entier."
+                            403 -> "Accès refusé : clé pas encore active (attendez quelques minutes), ou modèle non autorisé pour votre offre (essayez mistral-small-2603)."
+                            404 -> "Modèle ou adresse introuvable : vérifiez le nom du modèle et l'URL."
+                            else -> "Vérifiez la clé, l'URL et le nom du modèle dans les réglages."
+                        }
+                        val repLocale = Operations.comprendre(historique.last().texte)?.let { return@use propose(listOf(it), positions, null) }
+                            ?: reponseLocale(historique.last().texte, lignes, insights)
+                        return@use Message("assistant", "$repLocale\n\n— Assistant en ligne indisponible (erreur ${r.code}) : $raison\n$conseil")
+                    }
                     val m = JSONObject(txt).getJSONArray("choices").getJSONObject(0).getJSONObject("message")
                     val contenu = m.optString("content").takeIf { it != "null" }
                     val ops = Outils.lire(m.optJSONArray("tool_calls"))
