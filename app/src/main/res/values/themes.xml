@@ -1,0 +1,7 @@
+<resources>
+    <style name="Theme.Patrimo" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">#0D0F14</item>
+        <item name="android:statusBarColor">#0D0F14</item>
+        <item name="android:navigationBarColor">#161A22</item>
+    </style>
+</resources>

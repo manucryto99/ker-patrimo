@@ -1,0 +1,48 @@
+# Compile l'APK de Ker Patrimo à chaque modification du code (ou à la demande),
+# puis le publie dans « Releases » pour le télécharger depuis le téléphone.
+name: Compiler l'APK
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Compilation
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleRelease --stacktrace
+
+      - name: Renommer l'APK
+        run: cp app/build/outputs/apk/release/app-release.apk KerPatrimo-${{ github.run_number }}.apk
+
+      - name: Garder l'APK dans les résultats de la compilation
+        uses: actions/upload-artifact@v4
+        with:
+          name: KerPatrimo-${{ github.run_number }}
+          path: KerPatrimo-${{ github.run_number }}.apk
+
+      - name: Publier dans Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ github.run_number }}
+          name: Ker Patrimo – version ${{ github.run_number }}
+          body: "APK compilé automatiquement. Sur le téléphone : télécharger, ouvrir, installer par-dessus la version précédente."
+          files: KerPatrimo-${{ github.run_number }}.apk
