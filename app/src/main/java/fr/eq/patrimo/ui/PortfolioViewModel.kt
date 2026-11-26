@@ -59,9 +59,16 @@ class PortfolioViewModel(app: Application) : AndroidViewModel(app) {
     /** Catégorie affichée sur l'accueil : null = tout le patrimoine, sinon « Assurance vie », « PEA », « CTO », « Crypto ». */
     private val _categorie = MutableStateFlow<String?>(null)
     val categorie = _categorie.asStateFlow()
-    fun setCategorie(c: String?) { _categorie.value = c }
+    fun setCategorie(c: String?) { _categorie.value = c; _comptes.value = emptySet() }
 
-    val courbe: StateFlow<List<PointCourbe>> = combine(lignes, _periode, historyVersion, _categorie) { l, p, _, c -> l.filter { c == null || it.p.enveloppe == c } to p }
+    /** Contrats / comptes cochés dans la catégorie (vide = tous). Plusieurs possibles (ex. Revolut + Trade Republic). */
+    private val _comptes = MutableStateFlow<Set<String>>(emptySet())
+    val comptes = _comptes.asStateFlow()
+    fun basculerCompte(c: String) { _comptes.update { if (c in it) it - c else it + c } }
+    fun tousLesComptes() { _comptes.value = emptySet() }
+
+    val courbe: StateFlow<List<PointCourbe>> = combine(lignes, _periode, historyVersion, _categorie, _comptes) { l, p, _, c, sel ->
+            l.filter { (c == null || it.p.enveloppe == c) && (sel.isEmpty() || it.p.contrat in sel) } to p }
         .mapLatest { (l, p) ->
             withContext(Dispatchers.IO) {
                 val depuis = LocalDate.now().toEpochDay() - p.jours

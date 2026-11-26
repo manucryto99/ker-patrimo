@@ -10,6 +10,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
@@ -163,10 +164,13 @@ fun Accueil(vm: PortfolioViewModel) {
     val courbe by vm.courbe.collectAsStateWithLifecycle()
     val periode by vm.periode.collectAsStateWithLifecycle()
     val categorie by vm.categorie.collectAsStateWithLifecycle()
+    val comptes by vm.comptes.collectAsStateWithLifecycle()
     if (toutes.isEmpty()) { Vide(); return }
     // Tableau de bord par catégorie : Tout / Assurance vie / PEA / CTO / Crypto
     val categories = Portfolio.parEnveloppe(toutes).map { it.first }
-    val lignes = toutes.filter { categorie == null || it.p.enveloppe == categorie }
+    val lignesCat = toutes.filter { categorie == null || it.p.enveloppe == categorie }
+    // Contrats cochés : tous les indicateurs ci-dessous ne portent que sur eux
+    val lignes = lignesCat.filter { comptes.isEmpty() || it.p.contrat in comptes }
     val total = lignes.sumOf { it.valeur }
     Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
         // Bandeau : le domaine, hier et aujourd'hui
@@ -180,7 +184,40 @@ fun Accueil(vm: PortfolioViewModel) {
             item { FilterChip(selected = categorie == null, onClick = { vm.setCategorie(null) }, label = { Text("Tout") }) }
             items(categories) { c -> FilterChip(selected = c == categorie, onClick = { vm.setCategorie(c) }, label = { Text(c) }) }
         }
-        Text(categorie ?: "Patrimoine financier", color = C.Discret, fontSize = 13.sp, modifier = Modifier.padding(top = 12.dp))
+        // Liste cliquable des contrats de la catégorie (une ou plusieurs sélections)
+        if (categorie != null) {
+            val parContrat = lignesCat.groupBy { it.p.contrat }.map { (c, l) -> Triple(c, l.sumOf { it.valeur }, l.sumOf { it.investi } to l.sumOf { it.gain }) }
+                .sortedByDescending { it.second }
+            Column(Modifier.padding(top = 10.dp).fillMaxWidth().background(C.Carte, RoundedCornerShape(16.dp)).padding(vertical = 4.dp)) {
+                Row(Modifier.fillMaxWidth().clickable { vm.tousLesComptes() }.padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(if (comptes.isEmpty()) "✓ Tous les contrats" else "Tous les contrats", fontWeight = FontWeight.SemiBold, fontSize = 14.sp,
+                        color = if (comptes.isEmpty()) C.Or else C.Texte, modifier = Modifier.weight(1f))
+                    Text("${parContrat.size} contrats", color = C.Discret, fontSize = 12.sp)
+                }
+                parContrat.forEach { (nom, valeur, ig) ->
+                    val (inv, g) = ig
+                    val choisi = nom in comptes
+                    Row(Modifier.fillMaxWidth().clickable { vm.basculerCompte(nom) }
+                        .background(if (choisi) C.OrDoux else androidx.compose.ui.graphics.Color.Transparent)
+                        .padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.size(18.dp).border(1.5.dp, if (choisi) C.Or else C.Discret, RoundedCornerShape(5.dp))
+                            .background(if (choisi) C.Or else androidx.compose.ui.graphics.Color.Transparent, RoundedCornerShape(5.dp)), contentAlignment = Alignment.Center) {
+                            if (choisi) Text("✓", color = androidx.compose.ui.graphics.Color.Black, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
+                        Text(nom, fontSize = 14.sp, modifier = Modifier.padding(start = 10.dp).weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Column(horizontalAlignment = Alignment.End) {
+                            Text(Portfolio.eur(valeur), fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                            Text(Portfolio.pct(if (inv > 0) g / inv else 0.0), color = C.signe(g), fontSize = 12.sp)
+                        }
+                    }
+                }
+            }
+        }
+        Text(when {
+            categorie == null -> "Patrimoine financier"
+            comptes.isEmpty() -> categorie!!
+            else -> "$categorie · ${comptes.joinToString()}"
+        }, color = C.Discret, fontSize = 13.sp, modifier = Modifier.padding(top = 12.dp))
         val investi = lignes.sumOf { it.investi }; val gain = lignes.sumOf { it.gain }
         Text(Portfolio.eur(total), fontSize = 38.sp, fontWeight = FontWeight.Bold)
         Text("Investi ${Portfolio.eur(investi)} · plus-value ${Portfolio.signe(gain)} (${Portfolio.pct(if (investi > 0) gain / investi else 0.0)})",
@@ -201,8 +238,9 @@ fun Accueil(vm: PortfolioViewModel) {
         Text("Courbe à composition constante (positions actuelles)", color = C.Discret, fontSize = 11.sp, modifier = Modifier.padding(bottom = 10.dp))
         // Tout : répartition par catégorie ; une catégorie : répartition par contrat / compte
         val env = if (categorie == null) Portfolio.parEnveloppe(lignes)
+            else if (comptes.size == 1) lignes.groupBy { it.p.type }.mapValues { (_, v) -> v.sumOf { it.valeur } }.toList().sortedByDescending { it.second }
             else lignes.groupBy { it.p.contrat }.mapValues { (_, v) -> v.sumOf { it.valeur } }.toList().sortedByDescending { it.second }
-        Carte(titre = if (categorie == null) "Répartition par catégorie" else "Répartition par contrat") {
+        Carte(titre = when { categorie == null -> "Répartition par catégorie"; comptes.size == 1 -> "Répartition par type de support"; else -> "Répartition par contrat" }) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Anneau(env, Modifier.size(120.dp))
                 Column(Modifier.padding(start = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
