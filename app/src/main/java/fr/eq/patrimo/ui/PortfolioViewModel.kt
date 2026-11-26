@@ -109,7 +109,7 @@ class PortfolioViewModel(app: Application) : AndroidViewModel(app) {
             }
             _busy.value = false
             res.onSuccess { list ->
-                if (list.positions.isEmpty()) { _info.value = "Aucune ligne exploitable dans l'onglet « Positions »"; return@launch }
+                if (list.positions.isEmpty()) { _info.value = "Aucune ligne trouvée : le fichier doit contenir un onglet « portefeuille » (classeur de suivi) ou les onglets du modèle Ker Patrimo"; return@launch }
                 // Les frais réglés à la main sont conservés : barèmes modifiés et frais des fonds déjà saisis
                 val anciensContrats = dao.contrats().filter { it.modifie }.associateBy { it.etablissement to it.contrat }
                 val anciensFrais = dao.positions().filter { it.fraisAnnuels != null && it.isin != null }

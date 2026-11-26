@@ -48,8 +48,22 @@ object XlsxReader {
         }.filter { r -> r.values.any { it.isNotBlank() } }
     }
 
+    // Lecteur SANS gestion des espaces de noms : les attributs gardent leur préfixe (« r:id »).
+    // (Sur Android, Xml.newPullParser() l'active par défaut : « r:id » devenait introuvable.)
     private fun parser(bytes: ByteArray): XmlPullParser =
-        Xml.newPullParser().apply { setInput(bytes.inputStream(), "UTF-8") }
+        Xml.newPullParser().apply {
+            setFeature(XmlPullParser.FEATURE_PROCESS_NAMESPACES, false)
+            setInput(bytes.inputStream(), "UTF-8")
+        }
+
+    /** Attribut par nom, avec ou sans préfixe (« id » trouve aussi « r:id »). */
+    private fun attr(p: XmlPullParser, nom: String): String? {
+        for (i in 0 until p.attributeCount) {
+            val n = p.getAttributeName(i)
+            if (n == nom || n.endsWith(":$nom")) return p.getAttributeValue(i)
+        }
+        return null
+    }
 
     private fun parseSharedStrings(bytes: ByteArray): List<String> {
         val out = ArrayList<String>()
@@ -58,13 +72,13 @@ object XlsxReader {
         var inT = false
         while (p.next() != XmlPullParser.END_DOCUMENT) {
             when (p.eventType) {
-                XmlPullParser.START_TAG -> when (p.name) {
+                XmlPullParser.START_TAG -> when (p.name.substringAfter(':')) {
                     "si" -> sb = StringBuilder()
                     "t" -> inT = true
                     "rPh" -> inT = false // ignore les annotations phonétiques
                 }
                 XmlPullParser.TEXT -> if (inT) sb?.append(p.text)
-                XmlPullParser.END_TAG -> when (p.name) {
+                XmlPullParser.END_TAG -> when (p.name.substringAfter(':')) {
                     "t" -> inT = false
                     "si" -> { out.add(sb?.toString() ?: ""); sb = null }
                 }
@@ -78,8 +92,8 @@ object XlsxReader {
         val sheets = ArrayList<Pair<String, String>>() // nom -> rId
         val p = parser(wb)
         while (p.next() != XmlPullParser.END_DOCUMENT) {
-            if (p.eventType == XmlPullParser.START_TAG && p.name == "sheet") {
-                sheets.add((p.getAttributeValue(null, "name") ?: "") to (p.getAttributeValue(null, "r:id") ?: ""))
+            if (p.eventType == XmlPullParser.START_TAG && p.name.substringAfter(':') == "sheet") {
+                sheets.add((attr(p, "name") ?: "") to (attr(p, "r:id") ?: attr(p, "id") ?: ""))
             }
         }
         val rid = (sheets.firstOrNull { it.first.equals(sheetName, ignoreCase = true) } ?: if (premierSiAbsent) sheets.firstOrNull() else null)?.second
@@ -87,8 +101,8 @@ object XlsxReader {
         val rels = files["xl/_rels/workbook.xml.rels"] ?: return null
         val r = parser(rels)
         while (r.next() != XmlPullParser.END_DOCUMENT) {
-            if (r.eventType == XmlPullParser.START_TAG && r.name == "Relationship" && r.getAttributeValue(null, "Id") == rid) {
-                val target = r.getAttributeValue(null, "Target") ?: return null
+            if (r.eventType == XmlPullParser.START_TAG && r.name.substringAfter(':') == "Relationship" && attr(r, "Id") == rid) {
+                val target = attr(r, "Target") ?: return null
                 return if (target.startsWith("/")) target.removePrefix("/") else "xl/$target"
             }
         }
@@ -111,17 +125,17 @@ object XlsxReader {
         var capture = false
         while (p.next() != XmlPullParser.END_DOCUMENT) {
             when (p.eventType) {
-                XmlPullParser.START_TAG -> when (p.name) {
+                XmlPullParser.START_TAG -> when (p.name.substringAfter(':')) {
                     "row" -> row = HashMap()
                     "c" -> {
-                        col = colIndex(p.getAttributeValue(null, "r") ?: "A1")
-                        type = p.getAttributeValue(null, "t")
+                        col = colIndex(attr(p, "r") ?: "A1")
+                        type = attr(p, "t")
                         value.setLength(0)
                     }
                     "v", "t" -> capture = true
                 }
                 XmlPullParser.TEXT -> if (capture) value.append(p.text)
-                XmlPullParser.END_TAG -> when (p.name) {
+                XmlPullParser.END_TAG -> when (p.name.substringAfter(':')) {
                     "v", "t" -> capture = false
                     "c" -> {
                         val raw = value.toString()
