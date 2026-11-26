@@ -22,7 +22,7 @@ class QuoteService(private val dao: PortfolioDao) {
         return value / rate
     }
 
-    suspend fun refreshAll(withHistory: Boolean): RefreshResult = withContext(Dispatchers.IO) {
+    suspend fun refreshAll(withHistory: Boolean, range: String = "5y"): RefreshResult = withContext(Dispatchers.IO) {
         fxCache.clear()
         var ok = 0
         val failed = ArrayList<String>()
@@ -58,7 +58,7 @@ class QuoteService(private val dao: PortfolioDao) {
             ok++
             if (withHistory) {
                 val k = price / q.price // conversion au taux du jour (approximation)
-                val pts = prov.history(listing, "5y").map { (d, c) -> PricePoint(isin, d, c * k) }
+                val pts = prov.history(listing, range).map { (d, c) -> PricePoint(isin, d, c * k) }
                 if (pts.isNotEmpty()) dao.upsertPrices(pts)
             }
             // cours du jour dans l'historique, pour que la courbe finisse sur la dernière valeur

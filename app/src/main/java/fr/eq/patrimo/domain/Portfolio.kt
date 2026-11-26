@@ -39,6 +39,13 @@ enum class Periode(val label: String, val jours: Long, val secondes: Long = 0) {
     val intraday: Boolean get() = secondes > 0
 }
 
+/** Variations relatives d'une ligne cotée (null = pas de cours / pas d'historique). */
+data class Variations(val jour: Double?, val semaine: Double?, val mois: Double?) {
+    fun selon(h: Horizon) = when (h) { Horizon.JOUR -> jour; Horizon.SEMAINE -> semaine; Horizon.MOIS -> mois }
+}
+
+enum class Horizon(val label: String, val court: String) { JOUR("Jour", "J"), SEMAINE("1 semaine", "1S"), MOIS("1 mois", "1M") }
+
 data class PointCourbe(val epochDay: Long, val valeur: Double, val epochSec: Long? = null)
 
 object Portfolio {
@@ -134,6 +141,16 @@ object Portfolio {
             }
             PointCourbe(t / 86_400, total, t)
         }
+    }
+
+    /** Variation en euros d'une valeur actuelle qui a varié de v (relatif). */
+    fun deltaEur(valeur: Double, v: Double?): Double = if (v == null || v <= -1) 0.0 else valeur * v / (1 + v)
+
+    /** Variation agrégée (€, %) d'un ensemble de lignes sur un horizon ; les lignes sans cours comptent pour 0. */
+    fun variation(lignes: List<Ligne>, vars: Map<Long, Variations>, h: Horizon): Pair<Double, Double> {
+        val d = lignes.sumOf { deltaEur(it.valeur, vars[it.p.id]?.selon(h)) }
+        val avant = lignes.sumOf { it.valeur } - d
+        return d to (if (avant > 0) d / avant else 0.0)
     }
 
     fun parEnveloppe(lignes: List<Ligne>): List<Pair<String, Double>> =

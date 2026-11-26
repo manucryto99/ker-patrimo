@@ -102,6 +102,25 @@ class PortfolioViewModel(app: Application) : AndroidViewModel(app) {
         Portfolio.courbeIntraday(l, series, fin - p.secondes, maintenant)
     }
 
+    /** Variations jour / semaine / mois par ligne (id de position). */
+    val variations: StateFlow<Map<Long, fr.eq.patrimo.domain.Variations>> = combine(lignes, historyVersion) { l, _ -> l }
+        .mapLatest { l ->
+            withContext(Dispatchers.IO) {
+                val auj = LocalDate.now().toEpochDay()
+                val prix = dao.pricesSince(auj - 45).groupBy { it.isin }.mapValues { (_, v) -> v.sortedBy { it.epochDay } }
+                l.filter { it.estCote && it.p.dernierCours != null }.associate { li ->
+                    val c = li.p.dernierCours!!
+                    val serie = li.p.isin?.let { prix[it] }.orEmpty()
+                    fun depuis(n: Long): Double? = serie.lastOrNull { it.epochDay <= auj - n }?.close?.takeIf { it > 0 }?.let { c / it - 1 }
+                    li.p.id to fr.eq.patrimo.domain.Variations(li.varJour, depuis(7), depuis(30))
+                }
+            }
+        }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
+
+    private val _horizon = MutableStateFlow(fr.eq.patrimo.domain.Horizon.JOUR)
+    val horizon = _horizon.asStateFlow()
+    fun setHorizon(h: fr.eq.patrimo.domain.Horizon) { _horizon.value = h }
+
     private val _busy = MutableStateFlow(false)
     val busy = _busy.asStateFlow()
     private val _info = MutableStateFlow<String?>(null)
@@ -123,7 +142,11 @@ class PortfolioViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             _busy.value = true
             val sansHistorique = dao.priceCount() == 0
-            val r = quotes.refreshAll(withHistory = sansHistorique)
+            // Historique complet la 1re fois, puis les 3 derniers mois rechargés deux fois par jour (variations semaine / mois sans trou)
+            val prefs = getApplication<Application>().getSharedPreferences("cours", android.content.Context.MODE_PRIVATE)
+            val recharger = sansHistorique || System.currentTimeMillis() - prefs.getLong("histo", 0) > 12 * 3_600_000L
+            val r = quotes.refreshAll(withHistory = recharger, range = if (sansHistorique) "5y" else "3mo")
+            if (recharger && r.ok > 0) prefs.edit().putLong("histo", System.currentTimeMillis()).apply()
             historyVersion.update { it + 1 }
             _busy.value = false
             if (!silencieux || r.failed.isNotEmpty()) _info.value =

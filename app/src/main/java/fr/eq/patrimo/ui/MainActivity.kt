@@ -138,7 +138,7 @@ fun App(vm: PortfolioViewModel) {
         bottomBar = {
             NavigationBar(containerColor = C.Carte) {
                 listOf(
-                    Triple("Patrimoine", Icons.Default.Home, 0), Triple("Placements", Icons.AutoMirrored.Filled.List, 1),
+                    Triple("Patrimoine", Icons.Default.Home, 0), Triple("Titres", Icons.AutoMirrored.Filled.List, 1),
                     Triple("Surveiller", Icons.Default.Star, 4),
                     Triple("Assistant", Icons.Default.Person, 2), Triple("Alertes", Icons.Default.Notifications, 3)
                 ).forEach { (label, icon, i) ->
@@ -166,6 +166,8 @@ fun Accueil(vm: PortfolioViewModel) {
     val periode by vm.periode.collectAsStateWithLifecycle()
     val categorie by vm.categorie.collectAsStateWithLifecycle()
     val comptes by vm.comptes.collectAsStateWithLifecycle()
+    val vars by vm.variations.collectAsStateWithLifecycle()
+    val horizon by vm.horizon.collectAsStateWithLifecycle()
     if (toutes.isEmpty()) { Vide(); return }
     // Tableau de bord par catégorie : Tout / Assurance vie / PEA / CTO / Crypto
     val categories = Portfolio.parEnveloppe(toutes).map { it.first }
@@ -210,6 +212,26 @@ fun Accueil(vm: PortfolioViewModel) {
         }, color = C.Discret, fontSize = 13.sp, modifier = Modifier.padding(top = 12.dp))
         val investi = lignes.sumOf { it.investi }; val gain = lignes.sumOf { it.gain }
         Text(Portfolio.eur(total), fontSize = 38.sp, fontWeight = FontWeight.Bold)
+        // Gros indicateur de variation : jour / 1 semaine / 1 mois
+        run {
+            val (dv, pv) = Portfolio.variation(lignes, vars, horizon)
+            Column(Modifier.padding(vertical = 8.dp).fillMaxWidth().background(C.Carte, RoundedCornerShape(16.dp)).padding(14.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    fr.eq.patrimo.domain.Horizon.entries.forEach { h ->
+                        FilterChip(selected = h == horizon, onClick = { vm.setHorizon(h) }, label = { Text(h.label, fontSize = 12.sp) }, modifier = Modifier.height(30.dp))
+                    }
+                }
+                Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.Bottom) {
+                    Text((if (dv >= 0) "▲ " else "▼ ") + Portfolio.signe(dv), fontSize = 30.sp, fontWeight = FontWeight.Bold, color = C.signe(dv))
+                    Text("  " + Portfolio.pct(pv), fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = C.signe(dv), modifier = Modifier.padding(bottom = 3.dp))
+                }
+                Text(when (horizon) {
+                    fr.eq.patrimo.domain.Horizon.JOUR -> "Depuis la clôture de la veille"
+                    fr.eq.patrimo.domain.Horizon.SEMAINE -> "Sur 7 jours"
+                    fr.eq.patrimo.domain.Horizon.MOIS -> "Sur 30 jours"
+                } + " · lignes cotées (fonds euros et cash comptés stables)", color = C.Discret, fontSize = 11.sp)
+            }
+        }
         Text("Investi ${Portfolio.eur(investi)} · plus-value ${Portfolio.signe(gain)} (${Portfolio.pct(if (investi > 0) gain / investi else 0.0)})",
             color = C.Discret, fontSize = 13.sp)
         if (courbe.size >= 2) {
@@ -300,6 +322,7 @@ private enum class Tri(val label: String) { INVESTI("Investi"), VALEUR("Valeur")
 fun Placements(vm: PortfolioViewModel) {
     val lignes by vm.lignes.collectAsStateWithLifecycle()
     val contrats by vm.contrats.collectAsStateWithLifecycle()
+    val vars by vm.variations.collectAsStateWithLifecycle()
     var filtre by rememberSaveable { mutableStateOf("Tous") }
     var tri by remember { mutableStateOf(Tri.VALEUR) }
     var desc by remember { mutableStateOf(true) }
@@ -318,7 +341,7 @@ fun Placements(vm: PortfolioViewModel) {
             items(envs) { e -> FilterChip(selected = e == filtre, onClick = { filtre = e }, label = { Text(e) }) }
         }
         Row(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
-            Text("Placement", color = C.Discret, fontSize = 12.sp, modifier = Modifier.weight(1.6f))
+            Text("Titre", color = C.Discret, fontSize = 12.sp, modifier = Modifier.weight(1.6f))
             Tri.entries.forEach { t ->
                 Text(t.label + if (t == tri) (if (desc) " ↓" else " ↑") else "", color = if (t == tri) C.Or else C.Discret, fontSize = 12.sp,
                     textAlign = TextAlign.End, modifier = Modifier.weight(1f).clickable { if (tri == t) desc = !desc else { tri = t; desc = true } })
@@ -330,6 +353,7 @@ fun Placements(vm: PortfolioViewModel) {
                     Column(Modifier.weight(1.6f)) {
                         Text(l.p.libelle, fontSize = 13.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
                         Text(l.p.enveloppe + (l.p.source?.let { " · $it" } ?: ""), color = C.Discret, fontSize = 11.sp)
+                        vars[l.p.id]?.let { v -> VariationsLigne(v) }
                         if (l.fraisTotauxAn > 0.5) Text("frais ${Portfolio.eur(l.fraisTotauxAn)}/an" +
                             (if (l.partsPerdues > 0.0005) " · ${String.format(Locale.FRANCE, "%.3f", l.parts)} parts est." else ""),
                             color = C.Or, fontSize = 11.sp)
@@ -346,7 +370,29 @@ fun Placements(vm: PortfolioViewModel) {
                     Cellule(Portfolio.signe(v - inv), C.signe(v - inv), true)
                     Cellule(Portfolio.pct(if (inv > 0) (v - inv) / inv else 0.0), C.signe(v - inv), true)
                 }
+                Row(Modifier.fillMaxWidth().padding(bottom = 16.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                    fr.eq.patrimo.domain.Horizon.entries.forEach { h ->
+                        val (d, p) = Portfolio.variation(vues, vars, h)
+                        Column {
+                            Text(h.label, color = C.Discret, fontSize = 11.sp)
+                            Text(Portfolio.signe(d), color = C.signe(d), fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                            Text(Portfolio.pct(p), color = C.signe(d), fontSize = 11.sp)
+                        }
+                    }
+                }
             }
+        }
+    }
+}
+
+/** « J +0,4 % · 1S −1,2 % · 1M +3,1 % » sous le nom de la ligne. */
+@Composable
+private fun VariationsLigne(v: fr.eq.patrimo.domain.Variations) {
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        fr.eq.patrimo.domain.Horizon.entries.forEach { h ->
+            val x = v.selon(h)
+            Text("${h.court} " + (x?.let { Portfolio.pct(it) } ?: "—"), fontSize = 11.sp,
+                color = if (x == null) C.Discret else C.signe(x), maxLines = 1)
         }
     }
 }
