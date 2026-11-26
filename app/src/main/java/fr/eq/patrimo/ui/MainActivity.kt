@@ -103,9 +103,8 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private val XLSX_TYPES = arrayOf(
-    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", // .xlsx
-    "application/vnd.ms-excel.sheet.macroEnabled.12",                    // .xlsm (classeur de suivi)
+// Tous les fichiers : certains téléphones ne reconnaissent pas le type .xlsm et le grisent
+private val XLSX_TYPES = arrayOf("*/*")
     "application/vnd.ms-excel", "application/octet-stream"
 )
 
