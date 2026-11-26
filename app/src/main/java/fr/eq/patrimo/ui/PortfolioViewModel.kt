@@ -117,6 +117,27 @@ class PortfolioViewModel(app: Application) : AndroidViewModel(app) {
             }
         }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
 
+    /** Performances 1J…5A des titres « À surveiller » (id de position). */
+    val perfsSurveilles: StateFlow<Map<Long, fr.eq.patrimo.domain.Perfs>> = combine(surveilles, historyVersion) { s, _ -> s }
+        .mapLatest { liste ->
+            withContext(Dispatchers.IO) {
+                val auj = LocalDate.now().toEpochDay()
+                val prix = dao.pricesSince(auj - 1840).groupBy { it.isin }.mapValues { (_, v) -> v.sortedBy { it.epochDay } }
+                liste.filter { it.dernierCours != null }.associate { p ->
+                    val c = p.dernierCours!!
+                    val serie = p.isin?.let { prix[it] }.orEmpty()
+                    val debut = serie.firstOrNull()?.epochDay
+                    val vals = fr.eq.patrimo.domain.Perfs.JOURS.mapIndexed { i, n ->
+                        if (i == 0) p.coursVeille?.takeIf { it > 0 }?.let { c / it - 1 }
+                        // pas de chiffre si l'historique ne remonte pas assez loin (tolérance 5 jours)
+                        else if (debut == null || debut > auj - n + 5) null
+                        else serie.lastOrNull { it.epochDay <= auj - n }?.close?.takeIf { it > 0 }?.let { c / it - 1 }
+                    }
+                    p.id to fr.eq.patrimo.domain.Perfs(vals)
+                }
+            }
+        }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
+
     private val _horizon = MutableStateFlow(fr.eq.patrimo.domain.Horizon.JOUR)
     val horizon = _horizon.asStateFlow()
     fun setHorizon(h: fr.eq.patrimo.domain.Horizon) { _horizon.value = h }

@@ -44,6 +44,15 @@ data class Variations(val jour: Double?, val semaine: Double?, val mois: Double?
     fun selon(h: Horizon) = when (h) { Horizon.JOUR -> jour; Horizon.SEMAINE -> semaine; Horizon.MOIS -> mois }
 }
 
+/** Performances d'un titre sur 1J / 1S / 1M / 6M / 1A / 5A (null = pas de données). */
+data class Perfs(val valeurs: List<Double?>) {
+    companion object {
+        val LABELS = listOf("1J", "1S", "1M", "6M", "1A", "5A")
+        val JOURS = listOf(1L, 7L, 30L, 182L, 365L, 1826L)
+    }
+    operator fun get(i: Int) = valeurs[i]
+}
+
 enum class Horizon(val label: String, val court: String) { JOUR("Jour", "J"), SEMAINE("1 semaine", "1S"), MOIS("1 mois", "1M") }
 
 data class PointCourbe(val epochDay: Long, val valeur: Double, val epochSec: Long? = null)

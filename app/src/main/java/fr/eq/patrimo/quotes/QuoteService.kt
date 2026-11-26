@@ -22,6 +22,8 @@ class QuoteService(private val dao: PortfolioDao) {
         return value / rate
     }
 
+    private companion object { val historiqueLongCharge: MutableSet<String> = java.util.Collections.synchronizedSet(HashSet()) }
+
     suspend fun refreshAll(withHistory: Boolean, range: String = "5y"): RefreshResult = withContext(Dispatchers.IO) {
         fxCache.clear()
         var ok = 0
@@ -56,7 +58,12 @@ class QuoteService(private val dao: PortfolioDao) {
                 )
             )
             ok++
-            if (withHistory) {
+            // Ligne sans historique long (ex. titre ajouté à surveiller) : on charge 5 ans une fois par session
+            val court = isin !in historiqueLongCharge &&
+                (dao.oldestPrice(isin)?.let { it > LocalDate.now().toEpochDay() - 300 } ?: true)
+            if (withHistory || court) {
+                val range = if (court) "5y" else range
+                historiqueLongCharge.add(isin)
                 // Mise à l'échelle sur la dernière clôture de l'historique : gère la devise (taux du jour)
                 // et les unités différentes (ex. historique en pence, cours en livres)
                 val h = prov.history(listing, range)

@@ -451,6 +451,7 @@ private fun Modifier.wrapBulle(moi: Boolean) =
 @Composable
 fun Surveiller(vm: PortfolioViewModel) {
     val liste by vm.surveilles.collectAsStateWithLifecycle()
+    val perfs by vm.perfsSurveilles.collectAsStateWithLifecycle()
     val contrats by vm.contrats.collectAsStateWithLifecycle()
     var fiche by remember { mutableStateOf<Position?>(null) }
     var nouvelle by remember { mutableStateOf(false) }
@@ -464,6 +465,24 @@ fun Surveiller(vm: PortfolioViewModel) {
             }
         }
         if (liste.isEmpty()) item { Text("Rien à surveiller pour l'instant.", color = C.Discret) }
+        // Top 3 du jour, de la semaine et du mois
+        if (perfs.isNotEmpty()) item {
+            Row(Modifier.fillMaxWidth().padding(bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(0 to "Top 3 jour", 1 to "Top 3 semaine", 2 to "Top 3 mois").forEach { (i, titre) ->
+                    val top = liste.mapNotNull { p -> perfs[p.id]?.get(i)?.let { p to it } }.sortedByDescending { it.second }.take(3)
+                    Column(Modifier.weight(1f).background(C.Carte, RoundedCornerShape(14.dp)).padding(10.dp)) {
+                        Text(titre, color = C.Or, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        if (top.isEmpty()) Text("—", color = C.Discret, fontSize = 12.sp)
+                        top.forEachIndexed { rang, (p, v) ->
+                            Column(Modifier.padding(top = 6.dp).clickable { fiche = p }) {
+                                Text("${rang + 1}. ${p.libelle}", fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text(Portfolio.pct(v), color = C.signe(v), fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                            }
+                        }
+                    }
+                }
+            }
+        }
         items(liste, key = { it.id }) { p ->
             val varJour = p.dernierCours?.let { c -> p.coursVeille?.takeIf { it > 0 }?.let { c / it - 1 } }
             val ecartHaut = p.dernierCours?.let { c -> p.plusHaut52s?.takeIf { it > 0 }?.let { c / it - 1 } }
@@ -479,6 +498,18 @@ fun Surveiller(vm: PortfolioViewModel) {
                 Column(horizontalAlignment = Alignment.End) {
                     Text(p.dernierCours?.let { Portfolio.eur(it, true) } ?: "—", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
                     varJour?.let { Text(Portfolio.pct(it), color = C.signe(it), fontSize = 12.sp, fontWeight = FontWeight.SemiBold) }
+                }
+            }
+            perfs[p.id]?.let { pf ->
+                Row(Modifier.fillMaxWidth().padding(start = 50.dp, bottom = 8.dp)) {
+                    fr.eq.patrimo.domain.Perfs.LABELS.forEachIndexed { i, lab ->
+                        val v = pf[i]
+                        Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(lab, color = C.Discret, fontSize = 10.sp)
+                            Text(v?.let { Portfolio.pct(it) } ?: "—", color = if (v == null) C.Discret else C.signe(v), fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold, maxLines = 1)
+                        }
+                    }
                 }
             }
         }

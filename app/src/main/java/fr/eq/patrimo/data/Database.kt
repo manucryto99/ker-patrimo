@@ -124,6 +124,9 @@ abstract class PortfolioDao {
     @Query("SELECT * FROM prices WHERE epochDay >= :from ORDER BY epochDay")
     abstract suspend fun pricesSince(from: Long): List<PricePoint>
 
+    @Query("SELECT MIN(epochDay) FROM prices WHERE isin = :isin")
+    abstract suspend fun oldestPrice(isin: String): Long?
+
     @Query("SELECT COUNT(*) FROM prices")
     abstract suspend fun priceCount(): Int
 
