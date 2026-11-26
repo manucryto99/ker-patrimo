@@ -139,7 +139,7 @@ fun App(vm: PortfolioViewModel) {
         bottomBar = {
             NavigationBar(containerColor = C.Carte) {
                 listOf(
-                    Triple("Patrimoine", Icons.Default.Home, 0), Triple("Titres", Icons.AutoMirrored.Filled.List, 1),
+                    Triple("Synthèse", Icons.Default.Home, 0), Triple("Titres", Icons.AutoMirrored.Filled.List, 1),
                     Triple("Surveiller", Icons.Default.Star, 4), Triple("Fonds", Icons.Default.Search, 5),
                     Triple("Assistant", Icons.Default.Person, 2), Triple("Alertes", Icons.Default.Notifications, 3)
                 ).forEach { (label, icon, i) ->
@@ -185,28 +185,7 @@ fun Accueil(vm: PortfolioViewModel) {
             contentScale = ContentScale.Crop,
             modifier = Modifier.padding(top = 8.dp).fillMaxWidth().aspectRatio(1500f / 420f).clip(RoundedCornerShape(16.dp))
         )
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp), contentPadding = PaddingValues(top = 8.dp)) {
-            item { FilterChip(selected = categorie == null, onClick = { vm.setCategorie(null) }, label = { Text("Tout") }) }
-            items(categories) { c -> FilterChip(selected = c == categorie, onClick = { vm.setCategorie(c) }, label = { Text(c) }) }
-        }
-        // Liste cliquable des contrats de la catégorie (une ou plusieurs sélections)
-        if (categorie != null) {
-            val parContrat = lignesCat.groupBy { it.p.contrat }.map { (c, l) -> Triple(c, l.sumOf { it.valeur }, l.sumOf { it.investi } to l.sumOf { it.gain }) }
-                .sortedByDescending { it.second }
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp), contentPadding = PaddingValues(top = 2.dp)) {
-                item {
-                    FilterChip(selected = comptes.isEmpty(), onClick = { vm.tousLesComptes() }, label = { Text("Tous", fontSize = 12.sp) },
-                        modifier = Modifier.height(30.dp))
-                }
-                items(parContrat) { (nom, _, ig) ->
-                    val (inv, g) = ig
-                    FilterChip(selected = nom in comptes, onClick = { vm.basculerCompte(nom) }, modifier = Modifier.height(30.dp), label = {
-                        Text(nom, fontSize = 12.sp, maxLines = 1)
-                        Text(" " + Portfolio.pct(if (inv > 0) g / inv else 0.0), fontSize = 11.sp, color = C.signe(g), maxLines = 1)
-                    })
-                }
-            }
-        }
+        MenuCategories(vm, toutes)
         Text(when {
             categorie == null -> "Patrimoine financier"
             comptes.isEmpty() -> categorie!!
@@ -320,12 +299,44 @@ fun LigneResume(l: Ligne) {
 
 private enum class Tri(val label: String) { INVESTI("Investi"), VALEUR("Valeur"), GAIN("+/- €"), PERF("+/- %") }
 
+/** Menu à deux étages : catégories (Tout, Assurance vie, CTO…) puis contrats de la catégorie (sélection multiple). */
+@Composable
+private fun MenuCategories(vm: PortfolioViewModel, toutes: List<fr.eq.patrimo.domain.Ligne>) {
+    val categorie by vm.categorie.collectAsStateWithLifecycle()
+    val comptes by vm.comptes.collectAsStateWithLifecycle()
+    val categories = Portfolio.parEnveloppe(toutes).map { it.first }
+    val lignesCat = toutes.filter { categorie == null || it.p.enveloppe == categorie }
+    LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp), contentPadding = PaddingValues(top = 8.dp)) {
+        item { FilterChip(selected = categorie == null, onClick = { vm.setCategorie(null) }, label = { Text("Tout") }) }
+        items(categories) { c -> FilterChip(selected = c == categorie, onClick = { vm.setCategorie(c) }, label = { Text(c) }) }
+    }
+    // Liste cliquable des contrats de la catégorie (une ou plusieurs sélections)
+    if (categorie != null) {
+        val parContrat = lignesCat.groupBy { it.p.contrat }.map { (c, l) -> Triple(c, l.sumOf { it.valeur }, l.sumOf { it.investi } to l.sumOf { it.gain }) }
+            .sortedByDescending { it.second }
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp), contentPadding = PaddingValues(top = 2.dp)) {
+            item {
+                FilterChip(selected = comptes.isEmpty(), onClick = { vm.tousLesComptes() }, label = { Text("Tous", fontSize = 12.sp) },
+                    modifier = Modifier.height(30.dp))
+            }
+            items(parContrat) { (nom, _, ig) ->
+                val (inv, g) = ig
+                FilterChip(selected = nom in comptes, onClick = { vm.basculerCompte(nom) }, modifier = Modifier.height(30.dp), label = {
+                    Text(nom, fontSize = 12.sp, maxLines = 1)
+                    Text(" " + Portfolio.pct(if (inv > 0) g / inv else 0.0), fontSize = 11.sp, color = C.signe(g), maxLines = 1)
+                })
+            }
+        }
+    }
+}
+
 @Composable
 fun Placements(vm: PortfolioViewModel) {
     val lignes by vm.lignes.collectAsStateWithLifecycle()
     val contrats by vm.contrats.collectAsStateWithLifecycle()
     val vars by vm.variations.collectAsStateWithLifecycle()
-    var filtre by rememberSaveable { mutableStateOf("Tous") }
+    val categorie by vm.categorie.collectAsStateWithLifecycle()
+    val comptes by vm.comptes.collectAsStateWithLifecycle()
     var tri by remember { mutableStateOf(Tri.VALEUR) }
     var desc by remember { mutableStateOf(true) }
     // Fiche ouverte : null = fermée ; Position(id = 0) = nouvelle ligne
@@ -333,15 +344,16 @@ fun Placements(vm: PortfolioViewModel) {
     var nouvelle by remember { mutableStateOf(false) }
     if (fiche != null || nouvelle) FicheLigne(fiche, contrats, false, vm::enregistrerPosition, vm::supprimerPosition, vm::appliquer) { fiche = null; nouvelle = false }
     if (lignes.isEmpty()) { Vide(); return }
-    val envs = listOf("Tous") + lignes.map { it.p.enveloppe }.distinct()
-    val vues = lignes.filter { filtre == "Tous" || it.p.enveloppe == filtre }.sortedBy {
+    val vues = lignes.filter { (categorie == null || it.p.enveloppe == categorie) && (comptes.isEmpty() || it.p.contrat in comptes) }.sortedBy {
         when (tri) { Tri.INVESTI -> it.investi; Tri.VALEUR -> it.valeur; Tri.GAIN -> it.gain; Tri.PERF -> it.perf }
     }.let { if (desc) it.reversed() else it }
     Column(Modifier.padding(horizontal = 12.dp)) {
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp), contentPadding = PaddingValues(vertical = 8.dp)) {
-            item { OutlinedButton(onClick = { nouvelle = true }, shape = RoundedCornerShape(12.dp)) { Icon(Icons.Default.Add, null); Text(" Ajouter") } }
-            items(envs) { e -> FilterChip(selected = e == filtre, onClick = { filtre = e }, label = { Text(e) }) }
+        Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(listOfNotNull(categorie ?: "Tous les titres", comptes.takeIf { it.isNotEmpty() }?.joinToString()).joinToString(" · "),
+                color = C.Discret, fontSize = 13.sp, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            OutlinedButton(onClick = { nouvelle = true }, shape = RoundedCornerShape(12.dp)) { Icon(Icons.Default.Add, null); Text(" Ajouter") }
         }
+        MenuCategories(vm, lignes)
         Row(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
             Text("Titre", color = C.Discret, fontSize = 12.sp, modifier = Modifier.weight(1.6f))
             Tri.entries.forEach { t ->
