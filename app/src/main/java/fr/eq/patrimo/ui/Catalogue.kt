@@ -66,14 +66,20 @@ fun Catalogue(vm: PortfolioViewModel) {
     if (fiche != null) FicheLigne(fiche, contrats, fiche!!.aSurveiller, vm::enregistrerPosition, vm::supprimerPosition, vm::appliquer) { fiche = null }
 
     Column(Modifier.padding(horizontal = 16.dp)) {
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp), contentPadding = PaddingValues(vertical = 10.dp)) {
-            items(choix) { c ->
-                FilterChip(selected = c == courant, onClick = { sel = c.contrat; confirmerVider = false }, modifier = Modifier.height(34.dp), label = {
-                    Column {
-                        Text(c.contrat, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
-                        Text(c.enveloppe, fontSize = 9.sp, color = C.Discret, maxLines = 1)
-                    }
-                })
+        // Bandeau à deux niveaux : enveloppe (Assurance vie, PEA, CTO…) puis contrats de cette enveloppe
+        val envs = choix.map { it.enveloppe }.distinct()
+        val envCourante = courant?.enveloppe
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp), contentPadding = PaddingValues(top = 10.dp)) {
+            items(envs) { e ->
+                FilterChip(selected = e == envCourante, onClick = {
+                    if (e != envCourante) { sel = choix.first { it.enveloppe == e }.contrat; confirmerVider = false }
+                }, label = { Text(e) })
+            }
+        }
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp), contentPadding = PaddingValues(top = 2.dp, bottom = 8.dp)) {
+            items(choix.filter { it.enveloppe == envCourante }) { c ->
+                FilterChip(selected = c == courant, onClick = { sel = c.contrat; confirmerVider = false }, modifier = Modifier.height(30.dp),
+                    label = { Text(c.contrat, fontSize = 12.sp, maxLines = 1) })
             }
         }
         if (courant == null) { Text("Aucun contrat : importe d'abord ton fichier de suivi.", color = C.Discret); return@Column }
