@@ -34,7 +34,7 @@ object Outils {
             listOf("libelle", "enveloppe", "contrat", "type")))
         .put(outil("modifier_ligne", "Corrige des champs d'une ligne existante.",
             mapOf("ligne" to LIGNE, "contrat" to CONTRAT, "champs" to JSONObject().put("type", "object").put("description",
-                "Champs à modifier, valeurs en texte : parts, pru, libelle, isin, contrat, etablissement, enveloppe, type, valeur, taux (%), frais (%), notes")
+                "Champs à modifier, valeurs en texte : parts, pru, libelle, isin, contrat, etablissement, enveloppe, type, valeur, taux (%), frais (%), notes, disponibilites (contrats où le fonds est proposé, séparés par des virgules)")
                 .put("additionalProperties", JSONObject().put("type", "string"))),
             listOf("ligne", "champs")))
         .put(outil("supprimer_ligne", "Supprime définitivement une ligne.", mapOf("ligne" to LIGNE, "contrat" to CONTRAT), listOf("ligne")))

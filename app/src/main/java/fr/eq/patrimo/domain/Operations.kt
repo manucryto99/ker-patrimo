@@ -108,6 +108,7 @@ object Operations {
                     "taux" -> m.copy(tauxAnnuel = d(v)?.div(100))
                     "frais", "frais courants" -> m.copy(fraisAnnuels = d(v)?.div(100))
                     "notes" -> m.copy(notes = v)
+                    "disponibilites", "disponible", "dispo" -> m.copy(disponibilites = v)
                     else -> return "Champ inconnu : « $k »."
                 }
                 dao.update(m); "${m.libelle} mis à jour."

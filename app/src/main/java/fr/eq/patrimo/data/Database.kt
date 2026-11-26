@@ -38,7 +38,8 @@ data class Position(
     val coursVeille: Double? = null,       // en EUR
     val plusHaut52s: Double? = null,       // en EUR
     val majCours: Long? = null,            // epoch millis
-    val aSurveiller: Boolean = false       // ligne soldée ou idée : suivie dans l'onglet « À surveiller », hors patrimoine
+    val aSurveiller: Boolean = false,      // ligne soldée ou idée : suivie dans l'onglet « À surveiller », hors patrimoine
+    val disponibilites: String? = null     // contrats où le support est proposé, séparés par des virgules (saisie libre)
 )
 
 /**
@@ -137,7 +138,7 @@ abstract class PortfolioDao {
     abstract suspend fun snapshotsSince(from: Long): List<Snapshot>
 }
 
-@Database(entities = [Position::class, Contrat::class, PricePoint::class, Snapshot::class], version = 4, exportSchema = false)
+@Database(entities = [Position::class, Contrat::class, PricePoint::class, Snapshot::class], version = 5, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun dao(): PortfolioDao
 
@@ -145,6 +146,12 @@ abstract class AppDatabase : RoomDatabase() {
         @Volatile private var instance: AppDatabase? = null
         fun get(context: Context): AppDatabase = instance ?: synchronized(this) {
             instance ?: Room.databaseBuilder(context.applicationContext, AppDatabase::class.java, "patrimo.db")
+                // v4 -> v5 : ajout d'une colonne, sans perdre les lignes saisies
+                .addMigrations(object : androidx.room.migration.Migration(4, 5) {
+                    override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                        db.execSQL("ALTER TABLE positions ADD COLUMN disponibilites TEXT")
+                    }
+                })
                 .fallbackToDestructiveMigration() // phase de développement : on réimporte l'Excel
                 .build().also { instance = it }
         }

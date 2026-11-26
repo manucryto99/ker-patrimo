@@ -65,6 +65,8 @@ fun FicheLigne(
     var taux by remember { mutableStateOf(txt(p0?.tauxAnnuel?.times(100), 3)) }
     var frais by remember { mutableStateOf(txt(p0?.fraisAnnuels?.times(100), 3)) }
     var notes by remember { mutableStateOf(p0?.notes ?: "") }
+    var dispo by remember { mutableStateOf(p0?.disponibilites ?: "") }
+    val ctx = androidx.compose.ui.platform.LocalContext.current
     var surveiller by remember { mutableStateOf(p0?.aSurveiller ?: surveillanceParDefaut) }
     var confirmeSuppr by remember { mutableStateOf(false) }
     // Opération rapide
@@ -113,6 +115,14 @@ fun FicheLigne(
                         OutlinedTextField(frais, { frais = it }, label = { Text("Frais courants du fonds (%/an)") }, singleLine = true, keyboardOptions = dec, modifier = Modifier.fillMaxWidth())
                 }
                 OutlinedTextField(notes, { notes = it }, label = { Text("Notes") }, modifier = Modifier.fillMaxWidth())
+                if (type != "Crypto") {
+                    OutlinedTextField(dispo, { dispo = it }, label = { Text("Disponible aussi dans (contrats, séparés par des virgules)") },
+                        modifier = Modifier.fillMaxWidth())
+                    if (isin.isNotBlank()) TextButton(onClick = {
+                        val q = java.net.URLEncoder.encode("${isin.trim()} assurance vie contrats disponible", "UTF-8")
+                        runCatching { ctx.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse("https://www.google.com/search?q=$q"))) }
+                    }) { Text("Chercher les contrats qui le proposent ↗") }
+                }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("À surveiller (hors patrimoine)", modifier = Modifier.weight(1f))
                     Switch(checked = surveiller, onCheckedChange = { surveiller = it })
@@ -160,6 +170,7 @@ fun FicheLigne(
                     tauxAnnuel = dbl(taux)?.div(100),
                     fraisAnnuels = dbl(frais)?.div(100),
                     notes = notes.trim().ifEmpty { null },
+                    disponibilites = dispo.trim().ifEmpty { null },
                     aSurveiller = surveiller
                 ))
                 fermer()

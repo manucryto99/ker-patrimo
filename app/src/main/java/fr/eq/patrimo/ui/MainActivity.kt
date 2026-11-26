@@ -452,6 +452,7 @@ private fun Modifier.wrapBulle(moi: Boolean) =
 fun Surveiller(vm: PortfolioViewModel) {
     val liste by vm.surveilles.collectAsStateWithLifecycle()
     val perfs by vm.perfsSurveilles.collectAsStateWithLifecycle()
+    val toutes by vm.positions.collectAsStateWithLifecycle()
     val contrats by vm.contrats.collectAsStateWithLifecycle()
     var fiche by remember { mutableStateOf<Position?>(null) }
     var nouvelle by remember { mutableStateOf(false) }
@@ -508,6 +509,21 @@ fun Surveiller(vm: PortfolioViewModel) {
                 Column(horizontalAlignment = Alignment.End) {
                     Text(p.dernierCours?.let { Portfolio.eur(it, true) } ?: "—", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
                     varJour?.let { Text(Portfolio.pct(it), color = C.signe(it), fontSize = 12.sp, fontWeight = FontWeight.SemiBold) }
+                }
+            }
+            // Où le fonds est disponible : vos contrats (ligne elle-même + autres lignes du même ISIN) et autres contrats saisis
+            run {
+                val chez = (listOf(p) + toutes.filter { o -> o.id != p.id && p.isin != null && o.isin.equals(p.isin, true) })
+                    .mapNotNull { it.contrat.ifBlank { it.etablissement }.ifBlank { null } }.distinct()
+                val vos = (contrats.map { it.contrat } + toutes.map { it.contrat }).filter { it.isNotBlank() }.distinct()
+                fun norm(s: String) = java.text.Normalizer.normalize(s, java.text.Normalizer.Form.NFD).replace(Regex("\\p{M}"), "").lowercase().trim()
+                val saisis = p.disponibilites?.split(',', ';', '\n')?.map { it.trim() }?.filter { it.isNotEmpty() }.orEmpty()
+                val saisisVos = saisis.filter { s -> vos.any { v -> norm(v).contains(norm(s)) || norm(s).contains(norm(v)) } }
+                val autres = saisis - saisisVos.toSet()
+                val vosListe = (chez + saisisVos).distinctBy { norm(it) }
+                if (p.type != "Crypto" && (vosListe.isNotEmpty() || autres.isNotEmpty())) Column(Modifier.padding(start = 50.dp, bottom = 4.dp)) {
+                    if (vosListe.isNotEmpty()) Text("✓ Dans vos contrats : " + vosListe.joinToString(", "), color = C.Hausse, fontSize = 11.sp)
+                    if (autres.isNotEmpty()) Text("Ailleurs : " + autres.joinToString(", "), color = C.Discret, fontSize = 11.sp)
                 }
             }
             perfs[p.id]?.let { pf ->
