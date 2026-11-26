@@ -107,12 +107,15 @@ class PortfolioViewModel(app: Application) : AndroidViewModel(app) {
         .mapLatest { l ->
             withContext(Dispatchers.IO) {
                 val auj = LocalDate.now().toEpochDay()
-                val prix = dao.pricesSince(auj - 45).groupBy { it.isin }.mapValues { (_, v) -> v.sortedBy { it.epochDay } }
+                val prix = dao.pricesSince(auj - 375).groupBy { it.isin }.mapValues { (_, v) -> v.sortedBy { it.epochDay } }
                 l.filter { it.estCote && it.p.dernierCours != null }.associate { li ->
                     val c = li.p.dernierCours!!
                     val serie = li.p.isin?.let { prix[it] }.orEmpty()
-                    fun depuis(n: Long): Double? = serie.lastOrNull { it.epochDay <= auj - n }?.close?.takeIf { it > 0 }?.let { c / it - 1 }
-                    li.p.id to fr.eq.patrimo.domain.Variations(li.varJour, depuis(7), depuis(30))
+                    val debut = serie.firstOrNull()?.epochDay
+                    // pas de chiffre si l'historique ne remonte pas assez loin (tolérance 5 jours)
+                    fun depuis(n: Long): Double? = if (debut == null || debut > auj - n + 5) null
+                        else serie.lastOrNull { it.epochDay <= auj - n }?.close?.takeIf { it > 0 }?.let { c / it - 1 }
+                    li.p.id to fr.eq.patrimo.domain.Variations(li.varJour, depuis(7), depuis(30), depuis(91), depuis(182), depuis(365))
                 }
             }
         }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())

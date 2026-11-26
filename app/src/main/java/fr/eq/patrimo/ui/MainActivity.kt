@@ -82,6 +82,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -363,17 +366,19 @@ fun Placements(vm: PortfolioViewModel) {
         }
         LazyColumn(Modifier.weight(1f)) {
             items(vues, key = { it.p.id }) { l ->
-                Row(Modifier.fillMaxWidth().clickable { fiche = l.p }.padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.fillMaxWidth().clickable { fiche = l.p }.padding(vertical = 8.dp)) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1.6f)) {
                         Text(l.p.libelle, fontSize = 13.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
                         Text(l.p.enveloppe + (l.p.source?.let { " · $it" } ?: ""), color = C.Discret, fontSize = 11.sp)
-                        vars[l.p.id]?.let { v -> VariationsLigne(v) }
                         if (l.fraisTotauxAn > 0.5) Text("frais ${Portfolio.eur(l.fraisTotauxAn)}/an" +
                             (if (l.partsPerdues > 0.0005) " · ${String.format(Locale.FRANCE, "%.3f", l.parts)} parts est." else ""),
                             color = C.Or, fontSize = 11.sp)
                     }
                     Cellule(Portfolio.eur(l.investi)); Cellule(Portfolio.eur(l.valeur))
                     Cellule(Portfolio.signe(l.gain), C.signe(l.gain)); Cellule(Portfolio.pct(l.perf), C.signe(l.gain))
+                }
+                vars[l.p.id]?.let { v -> VariationsLigne(v) }
                 }
             }
             item {
@@ -399,14 +404,17 @@ fun Placements(vm: PortfolioViewModel) {
     }
 }
 
-/** « J +0,4 % · 1S −1,2 % · 1M +3,1 % » sous le nom de la ligne. */
+/** « J +0,4% · 1S −1,2% · 1M +3,1% · 3M · 6M · 1A » sur une ligne, pleine largeur, sous le titre. */
 @Composable
 private fun VariationsLigne(v: fr.eq.patrimo.domain.Variations) {
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        fr.eq.patrimo.domain.Horizon.entries.forEach { h ->
-            val x = v.selon(h)
-            Text("${h.court} " + (x?.let { Portfolio.pct(it) } ?: "—"), fontSize = 11.sp,
-                color = if (x == null) C.Discret else C.signe(x), maxLines = 1)
+    Row(Modifier.fillMaxWidth().padding(top = 3.dp)) {
+        v.toutes.forEach { (lab, x) ->
+            Text(buildAnnotatedString {
+                withStyle(SpanStyle(color = C.Discret)) { append("$lab ") }
+                withStyle(SpanStyle(color = if (x == null) C.Discret else C.signe(x), fontWeight = FontWeight.SemiBold)) {
+                    append(x?.let { (if (it >= 0) "+" else "−") + String.format(Locale.FRANCE, "%.1f", kotlin.math.abs(it) * 100) + "%" } ?: "—")
+                }
+            }, fontSize = 10.sp, maxLines = 1, modifier = Modifier.weight(1f))
         }
     }
 }

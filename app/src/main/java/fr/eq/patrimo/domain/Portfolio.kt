@@ -40,8 +40,12 @@ enum class Periode(val label: String, val jours: Long, val secondes: Long = 0) {
 }
 
 /** Variations relatives d'une ligne cotée (null = pas de cours / pas d'historique). */
-data class Variations(val jour: Double?, val semaine: Double?, val mois: Double?) {
+data class Variations(val jour: Double?, val semaine: Double?, val mois: Double?,
+                      val mois3: Double? = null, val mois6: Double? = null, val an1: Double? = null) {
     fun selon(h: Horizon) = when (h) { Horizon.JOUR -> jour; Horizon.SEMAINE -> semaine; Horizon.MOIS -> mois }
+    /** Les 6 horizons affichés sous chaque titre. */
+    val toutes: List<Pair<String, Double?>> get() =
+        listOf("J" to jour, "1S" to semaine, "1M" to mois, "3M" to mois3, "6M" to mois6, "1A" to an1)
 }
 
 /** Performances d'un titre sur 1J / 1S / 1M / 6M / 1A / 5A (null = pas de données). */
