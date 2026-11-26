@@ -144,9 +144,9 @@ class PortfolioViewModel(app: Application) : AndroidViewModel(app) {
             val sansHistorique = dao.priceCount() == 0
             // Historique complet la 1re fois, puis les 3 derniers mois rechargés deux fois par jour (variations semaine / mois sans trou)
             val prefs = getApplication<Application>().getSharedPreferences("cours", android.content.Context.MODE_PRIVATE)
-            val recharger = sansHistorique || System.currentTimeMillis() - prefs.getLong("histo", 0) > 12 * 3_600_000L
+            val recharger = sansHistorique || System.currentTimeMillis() - prefs.getLong("histo2", 0) > 12 * 3_600_000L
             val r = quotes.refreshAll(withHistory = recharger, range = if (sansHistorique) "5y" else "3mo")
-            if (recharger && r.ok > 0) prefs.edit().putLong("histo", System.currentTimeMillis()).apply()
+            if (recharger && r.ok > 0) prefs.edit().putLong("histo2", System.currentTimeMillis()).apply()
             historyVersion.update { it + 1 }
             _busy.value = false
             if (!silencieux || r.failed.isNotEmpty()) _info.value =

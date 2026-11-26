@@ -57,8 +57,16 @@ class QuoteService(private val dao: PortfolioDao) {
             )
             ok++
             if (withHistory) {
-                val k = price / q.price // conversion au taux du jour (approximation)
-                val pts = prov.history(listing, range).map { (d, c) -> PricePoint(isin, d, c * k) }
+                // Mise à l'échelle sur la dernière clôture de l'historique : gère la devise (taux du jour)
+                // et les unités différentes (ex. historique en pence, cours en livres)
+                val h = prov.history(listing, range)
+                val k = h.lastOrNull()?.second?.takeIf { it > 0 }?.let { last ->
+                    val r = price / last
+                    // si l'écart vient d'une unité (×100) on le corrige, sinon on garde le taux de change
+                    val fx = price / q.price
+                    if (r / fx > 20 || r / fx < 0.05) r else fx
+                } ?: (price / q.price)
+                val pts = h.map { (d, c) -> PricePoint(isin, d, c * k) }
                 if (pts.isNotEmpty()) dao.upsertPrices(pts)
             }
             // cours du jour dans l'historique, pour que la courbe finisse sur la dernière valeur

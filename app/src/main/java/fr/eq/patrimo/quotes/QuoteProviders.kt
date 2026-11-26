@@ -61,9 +61,11 @@ class YahooProvider : QuoteProvider {
     }
 
     override fun quote(listing: Listing): Quote? {
-        val meta = chart(listing.symbol, "5d")?.optJSONObject("meta") ?: return null
+        // range=1d : chartPreviousClose = clôture de la veille (avec 5d c'était la clôture d'il y a 5 séances)
+        val meta = chart(listing.symbol, "1d")?.optJSONObject("meta") ?: return null
         val price = meta.optDouble("regularMarketPrice").takeIf { !it.isNaN() } ?: return null
-        val prev = meta.optDouble("chartPreviousClose").takeIf { !it.isNaN() }
+        val prev = meta.optDouble("previousClose").takeIf { !it.isNaN() && it > 0 }
+            ?: meta.optDouble("chartPreviousClose").takeIf { !it.isNaN() && it > 0 }
         val high = meta.optDouble("fiftyTwoWeekHigh").takeIf { !it.isNaN() }
         var cur = meta.optString("currency", "EUR")
         // Les cotations londoniennes sont en pence
