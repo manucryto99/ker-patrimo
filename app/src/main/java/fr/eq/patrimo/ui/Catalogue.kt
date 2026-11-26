@@ -49,11 +49,14 @@ private data class Entree(val isin: String?, val libelle: String, val statut: St
 
 /** Onglet « Fonds » : tous les fonds connus de chaque contrat, par ordre alphabétique. */
 @Composable
-fun Catalogue(vm: PortfolioViewModel) {
+fun Catalogue(vm: PortfolioViewModel, ouvrirAssistant: () -> Unit) {
     val contrats by vm.contrats.collectAsStateWithLifecycle()
     val positions by vm.positions.collectAsStateWithLifecycle()
     val catalogue by vm.catalogue.collectAsStateWithLifecycle()
     val progression by vm.progression.collectAsStateWithLifecycle()
+    val chat by vm.chat.collectAsStateWithLifecycle()
+    var question by rememberSaveable { mutableStateOf("") }
+    var indexQuestion by rememberSaveable { mutableStateOf(-1) }
     val choix = contrats.filter { !it.enveloppe.contains("crypto", true) }.sortedWith(compareBy({ it.enveloppe }, { it.contrat }))
     var sel by rememberSaveable { mutableStateOf<String?>(null) }
     var recherche by rememberSaveable { mutableStateOf("") }
@@ -100,7 +103,46 @@ fun Catalogue(vm: PortfolioViewModel) {
         val q = norm(recherche)
         val visibles = if (q.isEmpty()) entrees else entrees.filter { norm(it.libelle).contains(q) || it.isin.orEmpty().lowercase().contains(q) }
 
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        // PEA / CTO : l'univers est trop vaste pour une liste → on interroge l'assistant
+        val bourse = !courant.enveloppe.contains("assurance", true)
+        if (bourse) {
+            fun envoyer(q: String) {
+                if (q.isBlank()) return
+                indexQuestion = chat.size
+                vm.poser("[Onglet Fonds — ${courant.enveloppe} ${courant.contrat} chez ${courant.etablissement}] $q")
+                question = ""
+            }
+            Column(Modifier.fillMaxWidth().background(C.Carte, RoundedCornerShape(14.dp)).padding(12.dp)) {
+                Text("Demander à l'assistant", fontWeight = FontWeight.SemiBold, color = C.Or)
+                Text("Sur un ${courant.enveloppe}, presque toute la Bourse est accessible : pose ta question plutôt que de parcourir une liste.",
+                    color = C.Discret, fontSize = 12.sp)
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp), contentPadding = PaddingValues(vertical = 6.dp)) {
+                    val idees = if (courant.enveloppe.contains("PEA", true))
+                        listOf("Quels ETF Monde éligibles au PEA ?", "Mes fonds surveillés sont-ils éligibles au PEA ?", "ETF PEA pour les marchés émergents")
+                    else listOf("ETF obligataires à frais bas", "ETF Monde capitalisant", "Quels de mes fonds surveillés sont achetables ici ?")
+                    items(idees) { i -> FilterChip(selected = false, onClick = { envoyer(i) }, label = { Text(i, fontSize = 12.sp) }) }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedTextField(question, { question = it }, placeholder = { Text("Ex. un ETF Inde est-il éligible ?") },
+                        modifier = Modifier.weight(1f), maxLines = 3)
+                    TextButton(onClick = { envoyer(question) }, enabled = question.isNotBlank()) { Text("Envoyer") }
+                }
+                val reponse = chat.getOrNull(indexQuestion + 1)?.takeIf { indexQuestion >= 0 && chat.getOrNull(indexQuestion)?.role == "user" }
+                if (reponse != null) {
+                    Text(reponse.texte, fontSize = 13.sp, modifier = Modifier.padding(top = 8.dp))
+                    if (reponse.etat == fr.eq.patrimo.assistant.Etat.EN_ATTENTE) Row {
+                        TextButton(onClick = { vm.valider(indexQuestion + 1) }) { Text("Valider") }
+                        TextButton(onClick = { vm.annuler(indexQuestion + 1) }) { Text("Annuler", color = C.Discret) }
+                    }
+                    Row {
+                        Text("À vérifier auprès du courtier avant d'acheter.", color = C.Discret, fontSize = 11.sp, modifier = Modifier.weight(1f).padding(top = 12.dp))
+                        TextButton(onClick = ouvrirAssistant) { Text("Ouvrir l'Assistant ↗", fontSize = 12.sp) }
+                    }
+                }
+            }
+            Text("Titres connus sur ce compte", fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 12.dp))
+        }
+        if (!bourse) Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text("${courant.etablissement} · ${courant.contrat}", fontWeight = FontWeight.SemiBold)
                 Text("${entrees.size} fonds" + (if (nCatalogue == 0) " · liste complète non importée" else " · dont $nCatalogue de la liste importée"),
@@ -124,7 +166,7 @@ fun Catalogue(vm: PortfolioViewModel) {
         }
         OutlinedTextField(recherche, { recherche = it }, label = { Text("Rechercher un fonds ou un ISIN") }, singleLine = true,
             modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp))
-        if (nCatalogue == 0) Text("Pour voir tous les fonds du contrat, télécharge la liste des supports chez l'assureur ou le courtier " +
+        if (nCatalogue == 0 && !bourse) Text("Pour voir tous les fonds du contrat, télécharge la liste des supports chez l'assureur ou le courtier " +
             "(Excel ou CSV), puis « Importer la liste ». Toute ligne contenant un ISIN est reprise.", color = C.Discret, fontSize = 12.sp)
 
         LazyColumn(contentPadding = PaddingValues(bottom = 16.dp)) {

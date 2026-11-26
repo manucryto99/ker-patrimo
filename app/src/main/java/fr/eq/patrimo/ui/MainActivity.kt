@@ -154,7 +154,7 @@ fun App(vm: PortfolioViewModel) {
                 1 -> Placements(vm)
                 2 -> Discussion(vm)
                 4 -> Surveiller(vm)
-                5 -> Catalogue(vm)
+                5 -> Catalogue(vm) { onglet = 2 }
                 else -> Alertes(vm)
             }
         }
