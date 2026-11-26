@@ -145,16 +145,53 @@ class PortfolioViewModel(app: Application) : AndroidViewModel(app) {
     /** Listes de fonds proposées par chaque contrat (onglet « Fonds »). */
     val catalogue = dao.observeCatalogue().stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
+    /** Avancement d'un import de liste de fonds : fraction 0..1, étape, secondes restantes estimées. */
+    data class Progression(val fraction: Float, val etape: String, val resteSec: Long?)
+    private val _progression = MutableStateFlow<Progression?>(null)
+    val progression = _progression.asStateFlow()
+
     fun importerCatalogue(uri: Uri, etablissement: String, contrat: String) {
         viewModelScope.launch {
             _busy.value = true
+            val debut = System.currentTimeMillis()
+            fun avance(f: Float, etape: String) {
+                val ecoule = (System.currentTimeMillis() - debut) / 1000.0
+                val reste = if (f > 0.03f) ((ecoule / f) * (1 - f)).toLong() else null
+                _progression.value = Progression(f.coerceIn(0f, 1f), etape, reste)
+            }
+            avance(0f, "Lecture du fichier…")
             val res = withContext(Dispatchers.IO) {
                 runCatching {
-                    val fonds = getApplication<Application>().contentResolver.openInputStream(uri)!!.use(fr.eq.patrimo.importer.CatalogueImporter::lire)
-                    if (fonds.isNotEmpty()) dao.insertCatalogue(fonds.map { (i, l) -> fr.eq.patrimo.data.FondsCatalogue(contrat, i, l, etablissement) })
+                    val cr = getApplication<Application>().contentResolver
+                    val taille = runCatching {
+                        cr.query(uri, arrayOf(android.provider.OpenableColumns.SIZE), null, null, null)?.use { c -> if (c.moveToFirst()) c.getLong(0) else -1L }
+                    }.getOrNull() ?: -1L
+                    // 1) lecture (0 → 30 %), au fil des octets lus
+                    val bytes = cr.openInputStream(uri)!!.use { input ->
+                        val out = java.io.ByteArrayOutputStream(); val buf = ByteArray(64 * 1024); var lu = 0L
+                        while (true) {
+                            val n = input.read(buf); if (n < 0) break
+                            out.write(buf, 0, n); lu += n
+                            if (taille > 0) avance(0.30f * lu / taille, "Lecture du fichier…")
+                        }
+                        out.toByteArray()
+                    }
+                    // 2) analyse (30 → 50 %)
+                    avance(0.30f, "Recherche des ISIN…")
+                    val fonds = fr.eq.patrimo.importer.CatalogueImporter.lire(bytes)
+                    avance(0.50f, "${fonds.size} fonds trouvés, enregistrement…")
+                    // 3) enregistrement par paquets (50 → 100 %)
+                    val items = fonds.map { (i, l) -> fr.eq.patrimo.data.FondsCatalogue(contrat, i, l, etablissement) }
+                    items.chunked(50).forEachIndexed { k, paquet ->
+                        dao.insertCatalogue(paquet)
+                        val fait = minOf(items.size, (k + 1) * 50)
+                        avance(0.50f + 0.50f * fait / items.size, "Enregistrement : $fait / ${items.size} fonds")
+                    }
+                    avance(1f, "Terminé")
                     fonds.size
                 }
             }
+            _progression.value = null
             _busy.value = false
             _info.value = res.fold({ n -> if (n == 0) "Aucun ISIN trouvé dans ce fichier (Excel, CSV ou texte attendu)" else "$n fonds ajoutés à $contrat" },
                 { "Lecture impossible : ${it.message}" })

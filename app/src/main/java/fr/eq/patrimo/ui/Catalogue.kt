@@ -17,6 +17,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -52,6 +53,7 @@ fun Catalogue(vm: PortfolioViewModel) {
     val contrats by vm.contrats.collectAsStateWithLifecycle()
     val positions by vm.positions.collectAsStateWithLifecycle()
     val catalogue by vm.catalogue.collectAsStateWithLifecycle()
+    val progression by vm.progression.collectAsStateWithLifecycle()
     val choix = contrats.filter { !it.enveloppe.contains("crypto", true) }.sortedWith(compareBy({ it.enveloppe }, { it.contrat }))
     var sel by rememberSaveable { mutableStateOf<String?>(null) }
     var recherche by rememberSaveable { mutableStateOf("") }
@@ -98,7 +100,18 @@ fun Catalogue(vm: PortfolioViewModel) {
                 Text("${entrees.size} fonds" + (if (nCatalogue == 0) " · liste complète non importée" else " · dont $nCatalogue de la liste importée"),
                     color = C.Discret, fontSize = 12.sp)
             }
-            OutlinedButton(onClick = { launcher.launch(arrayOf("*/*")) }, shape = RoundedCornerShape(12.dp)) { Text("Importer la liste", fontSize = 12.sp) }
+            OutlinedButton(enabled = progression == null, onClick = { launcher.launch(arrayOf("*/*")) }, shape = RoundedCornerShape(12.dp)) { Text("Importer la liste", fontSize = 12.sp) }
+        }
+        progression?.let { pr ->
+            Column(Modifier.fillMaxWidth().padding(vertical = 8.dp).background(C.Carte, RoundedCornerShape(12.dp)).padding(12.dp)) {
+                Row {
+                    Text("${(pr.fraction * 100).toInt()} %", fontWeight = FontWeight.Bold, color = C.Or, modifier = Modifier.weight(1f))
+                    Text(pr.resteSec?.let { s -> if (s < 1) "moins d'1 s restante" else if (s < 60) "environ $s s restantes" else "environ ${s / 60} min ${s % 60} s restantes" }
+                        ?: "estimation…", color = C.Discret, fontSize = 12.sp)
+                }
+                LinearProgressIndicator(progress = { pr.fraction }, color = C.Or, modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp))
+                Text(pr.etape, color = C.Discret, fontSize = 12.sp)
+            }
         }
         if (nCatalogue > 0) TextButton(onClick = { if (confirmerVider) { vm.viderCatalogue(courant.contrat); confirmerVider = false } else confirmerVider = true }) {
             Text(if (confirmerVider) "Confirmer : effacer la liste importée de ${courant.contrat}" else "Effacer la liste importée", fontSize = 12.sp, color = C.Discret)
