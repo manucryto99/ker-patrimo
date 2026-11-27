@@ -110,7 +110,7 @@ class PortfolioViewModel(app: Application) : AndroidViewModel(app) {
                 val prix = dao.pricesSince(auj - 1835).groupBy { it.isin }.mapValues { (_, v) -> v.sortedBy { it.epochDay } }
                 l.filter { it.estCote && it.p.dernierCours != null }.associate { li ->
                     val c = li.p.dernierCours!!
-                    val serie = li.p.isin?.let { prix[it] }.orEmpty()
+                    val serie = serieFiable(li.p.isin?.let { prix[it] }.orEmpty())
                     val debut = serie.firstOrNull()?.epochDay
                     // pas de chiffre si l'historique ne remonte pas assez loin (tolérance 5 jours)
                     fun depuis(n: Long): Double? = if (debut == null || debut > auj - n + 5) null
@@ -128,7 +128,7 @@ class PortfolioViewModel(app: Application) : AndroidViewModel(app) {
                 val prix = dao.pricesSince(auj - 1840).groupBy { it.isin }.mapValues { (_, v) -> v.sortedBy { it.epochDay } }
                 liste.filter { it.dernierCours != null }.associate { p ->
                     val c = p.dernierCours!!
-                    val serie = p.isin?.let { prix[it] }.orEmpty()
+                    val serie = serieFiable(p.isin?.let { prix[it] }.orEmpty())
                     val debut = serie.firstOrNull()?.epochDay
                     val vals = fr.eq.patrimo.domain.Perfs.JOURS.mapIndexed { i, n ->
                         if (i == 0) p.coursVeille?.takeIf { it > 0 }?.let { c / it - 1 }
@@ -140,6 +140,19 @@ class PortfolioViewModel(app: Application) : AndroidViewModel(app) {
                 }
             }
         }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
+
+    /**
+     * Ne garde que la partie de l'historique postérieure au dernier saut anormal (cours ×3 ou ÷3 d'un jour à l'autre) :
+     * changement d'unité (pence/livres), de devise ou de cotation, qui fausserait les variations longues.
+     */
+    private fun serieFiable(serie: List<fr.eq.patrimo.data.PricePoint>): List<fr.eq.patrimo.data.PricePoint> {
+        var debut = 0
+        for (i in 1 until serie.size) {
+            val a = serie[i - 1].close; val b = serie[i].close
+            if (a > 0 && b > 0 && (b / a > 3.0 || a / b > 3.0)) debut = i
+        }
+        return if (debut == 0) serie else serie.subList(debut, serie.size)
+    }
 
     private val _horizon = MutableStateFlow(fr.eq.patrimo.domain.Horizon.JOUR)
     val horizon = _horizon.asStateFlow()
@@ -241,9 +254,11 @@ class PortfolioViewModel(app: Application) : AndroidViewModel(app) {
             val sansHistorique = dao.priceCount() == 0
             // Historique complet la 1re fois, puis les 3 derniers mois rechargés deux fois par jour (variations semaine / mois sans trou)
             val prefs = getApplication<Application>().getSharedPreferences("cours", android.content.Context.MODE_PRIVATE)
-            val recharger = sansHistorique || System.currentTimeMillis() - prefs.getLong("histo2", 0) > 12 * 3_600_000L
-            val r = quotes.refreshAll(withHistory = recharger, range = if (sansHistorique) "5y" else "3mo")
-            if (recharger && r.ok > 0) prefs.edit().putLong("histo2", System.currentTimeMillis()).apply()
+            // Une fois : rechargement complet sur 5 ans pour remplacer les anciens historiques mal mis à l'échelle
+            val complet = sansHistorique || !prefs.getBoolean("histo5ans_v26", false)
+            val recharger = complet || System.currentTimeMillis() - prefs.getLong("histo2", 0) > 12 * 3_600_000L
+            val r = quotes.refreshAll(withHistory = recharger, range = if (complet) "5y" else "3mo")
+            if (recharger && r.ok > 0) prefs.edit().putLong("histo2", System.currentTimeMillis()).putBoolean("histo5ans_v26", true).apply()
             historyVersion.update { it + 1 }
             _busy.value = false
             if (!silencieux || r.failed.isNotEmpty()) _info.value =

@@ -159,7 +159,8 @@ object Portfolio {
     }
 
     /** Variation en euros d'une valeur actuelle qui a varié de v (relatif). */
-    fun deltaEur(valeur: Double, v: Double?): Double = if (v == null || v <= -1) 0.0 else valeur * v / (1 + v)
+    // garde-fou : une baisse de plus de 95 % est presque toujours une donnée erronée
+    fun deltaEur(valeur: Double, v: Double?): Double = if (v == null || v <= -0.95) 0.0 else valeur * v / (1 + v)
 
     /** Variation agrégée (€, %) d'un ensemble de lignes sur un horizon ; les lignes sans cours comptent pour 0. */
     fun variation(lignes: List<Ligne>, vars: Map<Long, Variations>, h: Horizon): Pair<Double, Double> {
