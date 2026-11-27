@@ -24,11 +24,13 @@ class QuoteService(private val dao: PortfolioDao) {
 
     private companion object { val historiqueLongCharge: MutableSet<String> = java.util.Collections.synchronizedSet(HashSet()) }
 
-    suspend fun refreshAll(withHistory: Boolean, range: String = "5y"): RefreshResult = withContext(Dispatchers.IO) {
+    suspend fun refreshAll(withHistory: Boolean, range: String = "5y", avance: (Int, Int) -> Unit = { _, _ -> }): RefreshResult = withContext(Dispatchers.IO) {
         fxCache.clear()
         var ok = 0
         val failed = ArrayList<String>()
-        for (p in dao.positions()) {
+        val toutes = dao.positions()
+        for ((rang, p) in toutes.withIndex()) {
+            avance(rang, toutes.size)
             val isin = p.isin ?: continue
             // 1. Source déjà connue pour cet ISIN, sinon recherche automatique
             val cached = p.symbole?.let { s -> providers.firstOrNull { it.name == p.source }?.let { it to Listing(s, it.name) } }

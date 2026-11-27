@@ -96,7 +96,9 @@ fun Catalogue(vm: PortfolioViewModel, ouvrirAssistant: () -> Unit) {
             positions.filter { p -> p.aSurveiller && p.contrat != courant.contrat &&
                 p.disponibilites.orEmpty().split(',', ';').any { d -> norm(d).isNotEmpty() && (norm(d).contains(n) || n.contains(norm(d))) } }
                 .forEach { add(Entree(it.isin, it.libelle, Statut.SURVEILLE, it)) }
-            catalogue.filter { it.contrat == courant.contrat }.forEach { add(Entree(it.isin, it.libelle, Statut.PROPOSE, null)) }
+            catalogue.filter { it.contrat == courant.contrat }.forEach {
+                add(Entree(it.isin.takeUnless { i -> i.startsWith(fr.eq.patrimo.importer.CatalogueImporter.SANS_ISIN) }, it.libelle, Statut.PROPOSE, null))
+            }
         }.distinctBy { it.isin?.uppercase() ?: norm(it.libelle) }
             .sortedBy { norm(it.libelle) }
         val nCatalogue = catalogue.count { it.contrat == courant.contrat }
@@ -151,17 +153,7 @@ fun Catalogue(vm: PortfolioViewModel, ouvrirAssistant: () -> Unit) {
             }
             OutlinedButton(enabled = progression == null, onClick = { launcher.launch(arrayOf("*/*")) }, shape = RoundedCornerShape(12.dp)) { Text("Importer la liste", fontSize = 12.sp) }
         }
-        progression?.let { pr ->
-            Column(Modifier.fillMaxWidth().padding(vertical = 8.dp).background(C.Carte, RoundedCornerShape(12.dp)).padding(12.dp)) {
-                Row {
-                    Text("${(pr.fraction * 100).toInt()} %", fontWeight = FontWeight.Bold, color = C.Or, modifier = Modifier.weight(1f))
-                    Text(pr.resteSec?.let { s -> if (s < 1) "moins d'1 s restante" else if (s < 60) "environ $s s restantes" else "environ ${s / 60} min ${s % 60} s restantes" }
-                        ?: "estimation…", color = C.Discret, fontSize = 12.sp)
-                }
-                LinearProgressIndicator(progress = { pr.fraction }, color = C.Or, modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp))
-                Text(pr.etape, color = C.Discret, fontSize = 12.sp)
-            }
-        }
+        // (la progression de l'import s'affiche sous l'en-tête de l'appli, sur tous les onglets)
         if (nCatalogue > 0) TextButton(onClick = { if (confirmerVider) { vm.viderCatalogue(courant.contrat); confirmerVider = false } else confirmerVider = true }) {
             Text(if (confirmerVider) "Confirmer : effacer la liste importée de ${courant.contrat}" else "Effacer la liste importée", fontSize = 12.sp, color = C.Discret)
         }
@@ -176,9 +168,9 @@ fun Catalogue(vm: PortfolioViewModel, ouvrirAssistant: () -> Unit) {
                     verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text(e.libelle, fontSize = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                        Text(e.isin ?: "—", color = C.Discret, fontSize = 11.sp)
+                        Text(e.isin ?: "sans ISIN", color = C.Discret, fontSize = 11.sp)
                     }
-                    if (e.statut == Statut.PROPOSE && e.isin != null)
+                    if (e.statut == Statut.PROPOSE)
                         TextButton(onClick = { vm.surveillerFonds(e.isin, e.libelle, courant) }) { Text("+ Surveiller", fontSize = 12.sp) }
                     else Box(Modifier.background(e.statut.couleur.copy(alpha = .15f), RoundedCornerShape(8.dp)).padding(horizontal = 8.dp, vertical = 3.dp)) {
                         Text(e.statut.label, color = e.statut.couleur, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)

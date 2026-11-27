@@ -59,6 +59,7 @@ import androidx.compose.material3.OutlinedButton
 import fr.eq.patrimo.assistant.Etat
 import fr.eq.patrimo.data.Position
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
@@ -134,11 +135,18 @@ fun App(vm: PortfolioViewModel) {
     LaunchedEffect(Unit) { if (Build.VERSION.SDK_INT >= 33) notifLauncher.launch(Manifest.permission.POST_NOTIFICATIONS) }
     LaunchedEffect(info) { info?.let { snack.showSnackbar(it); vm.clearInfo() } }
     if (reglages) { ReglagesEcran(vm, snack) { reglages = false }; return }
+    // Import : barre de progression visible quel que soit l'onglet, puis bilan
+    val progression by vm.progression.collectAsStateWithLifecycle()
+    val bilan by vm.bilan.collectAsStateWithLifecycle()
+    bilan?.let { b ->
+        AlertDialog(onDismissRequest = vm::fermerBilan, confirmButton = { TextButton(onClick = vm::fermerBilan) { Text("OK") } },
+            title = { Text("Import") }, text = { Text(b, fontSize = 14.sp) })
+    }
 
     Scaffold(
         containerColor = C.Fond,
         snackbarHost = { SnackbarHost(snack) },
-        topBar = {
+        topBar = { Column {
             Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp, top = 12.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("Ker ", fontFamily = FontFamily.Serif, fontStyle = FontStyle.Italic, fontSize = 20.sp, color = C.Or)
                 Text("Patrimo", fontWeight = FontWeight.Bold, fontSize = 19.sp)
@@ -154,7 +162,18 @@ fun App(vm: PortfolioViewModel) {
                 IconButton(onClick = { reglages = true }) { Icon(Icons.Default.Settings, "Réglages") }
                 Button(onClick = { importLauncher.launch(XLSX_TYPES) }, shape = RoundedCornerShape(12.dp)) { Text("Importer") }
             }
-        },
+            progression?.let { pr ->
+                Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp).background(C.Carte, RoundedCornerShape(12.dp)).padding(10.dp)) {
+                    Row {
+                        Text("${(pr.fraction * 100).toInt()} %", fontWeight = FontWeight.Bold, color = C.Or, modifier = Modifier.weight(1f))
+                        Text(pr.resteSec?.let { s -> if (s < 1) "moins d'1 s restante" else if (s < 60) "environ $s s restantes" else "environ ${s / 60} min ${s % 60} s restantes" }
+                            ?: "estimation…", color = C.Discret, fontSize = 12.sp)
+                    }
+                    LinearProgressIndicator(progress = { pr.fraction }, color = C.Or, modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp))
+                    Text(pr.etape, color = C.Discret, fontSize = 12.sp)
+                }
+            }
+        } },
         bottomBar = {
             NavigationBar(containerColor = C.Carte) {
                 listOf(

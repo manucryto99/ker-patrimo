@@ -217,9 +217,9 @@ class PortfolioViewModel(app: Application) : AndroidViewModel(app) {
     fun viderCatalogue(contrat: String) { viewModelScope.launch { dao.viderCatalogue(contrat); _info.value = "Liste de $contrat effacée" } }
 
     /** Ajoute un fonds du catalogue à « À surveiller », avec le contrat qui le propose. */
-    fun surveillerFonds(isin: String, libelle: String, contrat: fr.eq.patrimo.data.Contrat) {
+    fun surveillerFonds(isin: String?, libelle: String, contrat: fr.eq.patrimo.data.Contrat) {
         viewModelScope.launch {
-            val existant = dao.positions().firstOrNull { it.aSurveiller && it.isin.equals(isin, true) }
+            val existant = dao.positions().firstOrNull { it.aSurveiller && (if (isin != null) it.isin.equals(isin, true) else it.libelle.equals(libelle, true)) }
             if (existant != null) {
                 val d = (existant.disponibilites?.split(',')?.map { it.trim() }.orEmpty() + contrat.contrat).filter { it.isNotEmpty() }.distinct()
                 dao.update(existant.copy(disponibilites = d.joinToString(", ")))
@@ -277,17 +277,35 @@ class PortfolioViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** Bilan du dernier import, affiché dans une fenêtre jusqu'à ce qu'on la ferme. */
+    private val _bilan = MutableStateFlow<String?>(null)
+    val bilan = _bilan.asStateFlow()
+    fun fermerBilan() { _bilan.value = null }
+
     fun importer(uri: Uri) {
         viewModelScope.launch {
             _busy.value = true
+            val debut = System.currentTimeMillis()
+            fun avance(f: Float, etape: String) {
+                val ecoule = (System.currentTimeMillis() - debut) / 1000.0
+                val reste = if (f > 0.05f) ((ecoule / f) * (1 - f)).toLong() else null
+                _progression.value = Progression(f.coerceIn(0f, 1f), etape, reste)
+            }
+            avance(0f, "Lecture du fichier…")
             val res = withContext(Dispatchers.IO) {
                 runCatching {
-                    getApplication<Application>().contentResolver.openInputStream(uri)!!.use(PortfolioImporter::lire)
+                    val octets = getApplication<Application>().contentResolver.openInputStream(uri)!!.use { it.readBytes() }
+                    avance(0.2f, "Analyse des onglets…")
+                    PortfolioImporter.lire(octets.inputStream())
                 }
             }
-            _busy.value = false
             res.onSuccess { list ->
-                if (list.positions.isEmpty()) { _info.value = "Aucune ligne trouvée : le fichier doit contenir un onglet « portefeuille » (classeur de suivi) ou les onglets du modèle Ker Patrimo"; return@launch }
+                if (list.positions.isEmpty()) {
+                    _progression.value = null; _busy.value = false
+                    _bilan.value = "Aucune ligne trouvée.\n\nLe fichier doit contenir l'onglet « portefeuille » (classeur de suivi) ou des onglets du modèle Ker Patrimo : Assurances vie, PEA, Comptes-titres, Crypto, PER, PEE."
+                    return@launch
+                }
+                avance(0.35f, "Enregistrement de ${list.positions.size} lignes…")
                 // Les frais réglés à la main sont conservés : barèmes modifiés et frais des fonds déjà saisis
                 val anciensContrats = dao.contrats().filter { it.modifie }.associateBy { it.etablissement to it.contrat }
                 val anciensFrais = dao.positions().filter { it.fraisAnnuels != null && it.isin != null }
@@ -305,10 +323,16 @@ class PortfolioViewModel(app: Application) : AndroidViewModel(app) {
                         .distinctBy { it.etablissement to it.contrat }
                     dao.replaceImport(gardees + positions, tousContrats)
                 }
-                _info.value = "${list.positions.size} placements importés" + (if (list.complet) "" else " (ajoutés au reste du patrimoine)") + ", recherche des cours…"
-                quotes.refreshAll(withHistory = true).also { historyVersion.update { v -> v + 1 } }
-                _info.value = "Import terminé"
-            }.onFailure { _info.value = "Import impossible : ${it.message}" }
+                avance(0.45f, "Recherche des cours…")
+                val r = quotes.refreshAll(withHistory = true) { i, n -> avance(0.45f + 0.55f * i / n.coerceAtLeast(1), "Cours en ligne : ${i + 1} / $n") }
+                historyVersion.update { v -> v + 1 }
+                _progression.value = null; _busy.value = false
+                val detail = positions.groupBy { "${it.enveloppe} · ${it.contrat}" }.entries.joinToString("\n") { (k, v) -> "• $k : ${v.size} ligne(s)" }
+                _bilan.value = (if (list.complet) "Patrimoine remplacé par le fichier." else "Ajouté au patrimoine (les autres contrats n'ont pas été modifiés).") +
+                    "\n\n$detail\n\nCours trouvés en ligne : ${r.ok}" + (if (r.failed.isNotEmpty()) " · sans cotation : ${r.failed.size} (valeur du fichier conservée)" else "")
+                // Fichier partiel : on affiche directement la catégorie importée
+                if (!list.complet) positions.map { it.enveloppe }.distinct().singleOrNull()?.let { setCategorie(it) }
+            }.onFailure { _progression.value = null; _busy.value = false; _bilan.value = "Import impossible : ${it.message}" }
         }
     }
 
