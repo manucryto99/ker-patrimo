@@ -721,23 +721,28 @@ fun formatParts(q: Double, type: String?): String {
     return nf.format(q)
 }
 
-/** Trois cartes compactes « Top 3 jour / semaine / mois » (nom sur 2 lignes, petite police). */
+/** Cartes compactes : Top 5 (meilleurs) puis, en dessous, Flop 5 (pires) — jour / semaine / mois. */
 @Composable
 fun Top3Cartes(
     groupes: List<Pair<String, List<Triple<String, Double, fr.eq.patrimo.data.Position>>>>,
     ouvrir: (fr.eq.patrimo.data.Position) -> Unit
 ) {
-    Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        groupes.forEach { (titre, valeurs) ->
-            val top = valeurs.sortedByDescending { it.second }.take(3)
-            Column(Modifier.weight(1f).background(C.Carte, RoundedCornerShape(12.dp)).padding(horizontal = 7.dp, vertical = 6.dp)) {
-                Text("Top 3 $titre", color = C.Or, fontWeight = FontWeight.Bold, fontSize = 10.5.sp)
-                if (top.isEmpty()) Text("—", color = C.Discret, fontSize = 10.sp)
-                top.forEachIndexed { rang, (nom, v, pos) ->
-                    Row(Modifier.padding(top = 4.dp).clickable { ouvrir(pos) }, verticalAlignment = Alignment.Top) {
-                        Text("${rang + 1}. $nom", fontSize = 9.5.sp, lineHeight = 11.sp, maxLines = 2, overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f))
-                        Text(" " + Portfolio.pct(v).replace(" ", ""), color = C.signe(v), fontSize = 10.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+    Column(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        listOf(true, false).forEach { meilleurs ->
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                groupes.forEach { (titre, valeurs) ->
+                    val top = (if (meilleurs) valeurs.sortedByDescending { it.second } else valeurs.sortedBy { it.second }).take(5)
+                    Column(Modifier.weight(1f).background(C.Carte, RoundedCornerShape(12.dp)).padding(horizontal = 7.dp, vertical = 6.dp)) {
+                        Text((if (meilleurs) "Top 5 " else "Flop 5 ") + titre, color = if (meilleurs) C.Or else C.Baisse,
+                            fontWeight = FontWeight.Bold, fontSize = 10.5.sp)
+                        if (top.isEmpty()) Text("—", color = C.Discret, fontSize = 10.sp)
+                        top.forEachIndexed { rang, (nom, v, pos) ->
+                            Row(Modifier.padding(top = 4.dp).clickable { ouvrir(pos) }, verticalAlignment = Alignment.Top) {
+                                Text("${rang + 1}. $nom", fontSize = 9.5.sp, lineHeight = 11.sp, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f))
+                                Text(" " + Portfolio.pct(v).replace(" ", ""), color = C.signe(v), fontSize = 10.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                            }
+                        }
                     }
                 }
             }
