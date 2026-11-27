@@ -82,6 +82,10 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.runtime.key
 import androidx.compose.foundation.layout.requiredHeight
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
@@ -154,7 +158,7 @@ fun App(vm: PortfolioViewModel) {
         bottomBar = {
             NavigationBar(containerColor = C.Carte) {
                 listOf(
-                    Triple("Synthèse", Icons.Default.Home, 0), Triple("Titres", Icons.AutoMirrored.Filled.List, 1),
+                    Triple("Patrimoine", Icons.Default.Home, 0),
                     Triple("Surveiller", Icons.Default.Star, 4), Triple("Fonds", Icons.Default.Search, 5),
                     Triple("Assistant", Icons.Default.Person, 2), Triple("Alertes", Icons.Default.Notifications, 3)
                 ).forEach { (label, icon, i) ->
@@ -166,7 +170,6 @@ fun App(vm: PortfolioViewModel) {
         Box(Modifier.padding(pad).fillMaxSize()) {
             when (onglet) {
                 0 -> Accueil(vm)
-                1 -> Placements(vm)
                 2 -> Discussion(vm)
                 4 -> Surveiller(vm)
                 5 -> Catalogue(vm) { onglet = 2 }
@@ -264,11 +267,16 @@ fun Accueil(vm: PortfolioViewModel) {
             }
         }
         val fFonds = lignes.sumOf { it.fraisFondsAn }; val fContrat = lignes.sumOf { it.fraisContratAn }; val fGarde = lignes.sumOf { it.gardeAn }
-        Carte(titre = "Frais annuels : ${Portfolio.eur(fFonds + fContrat + fGarde)} (${Portfolio.pctAbs((fFonds + fContrat + fGarde) / total, 2)})") {
-            LigneFrais("Frais des fonds et ETF", fFonds, "déjà inclus dans les cours")
-            LigneFrais("Frais des contrats d'assurance vie", fContrat, "prélevés en nombre de parts")
-            LigneFrais("Droits de garde PEA / compte-titres", fGarde, "débités sur les espèces")
-            Text("Gains affichés nets de ces trois frais.", color = C.Discret, fontSize = 11.sp, modifier = Modifier.padding(top = 6.dp))
+        // Frais : seules les rubriques qui concernent les supports affichés, avec leur taux moyen
+        val fTotal = fFonds + fContrat + fGarde
+        if (fTotal > 0.5) Carte(titre = "Frais annuels : ${Portfolio.eur(fTotal)} (${Portfolio.pctAbs(fTotal / total, 2)})") {
+            val baseUc = lignes.filter { it.fraisFondsAn > 0 }.sumOf { it.valeur }
+            val baseAv = lignes.filter { it.p.enveloppe.contains("assurance", true) }.sumOf { it.valeur }
+            val baseBourse = lignes.filter { it.p.enveloppe.contains("PEA", true) || it.p.enveloppe.contains("CTO", true) || it.p.enveloppe.contains("titre", true) }.sumOf { it.valeur }
+            if (fFonds > 0.5) LigneFrais("Fonds et ETF", fFonds, if (baseUc > 0) fFonds / baseUc else null, "inclus dans les cours")
+            if (fContrat > 0.5) LigneFrais("Contrats d'assurance vie", fContrat, if (baseAv > 0) fContrat / baseAv else null, "prélevés en parts")
+            if (fGarde > 0.5) LigneFrais("Droits de garde", fGarde, if (baseBourse > 0) fGarde / baseBourse else null, "PEA / CTO")
+            Text("Gains affichés nets de ces frais.", color = C.Discret, fontSize = 10.sp, modifier = Modifier.padding(top = 2.dp))
         }
         val tri = lignes.filter { it.estCote }.sortedByDescending { it.perf }
         // Plus et moins-values par portefeuille (dès que plusieurs contrats sont affichés)
@@ -294,20 +302,19 @@ fun Accueil(vm: PortfolioViewModel) {
                 }
             }
         }
-        if (tri.isNotEmpty()) Carte(titre = "Meilleures et pires lignes") {
-            (tri.take(2) + tri.takeLast(2)).distinct().forEach { LigneResume(it, vars[it.p.id]) }
-        }
+        // Détail des titres, replié par défaut
+        DetailTitres(vm, lignes, vars)
+        Spacer(Modifier.height(16.dp))
     }
 }
 
 @Composable
-fun LigneFrais(titre: String, montant: Double, detail: String) {
-    Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-        Column(Modifier.weight(1f)) {
-            Text(titre, fontSize = 13.5.sp)
-            Text(detail, color = C.Discret, fontSize = 11.5.sp)
-        }
-        Text(Portfolio.eur(montant), fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+fun LigneFrais(titre: String, montant: Double, taux: Double?, detail: String) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(titre, fontSize = 12.5.sp)
+        Text("  $detail", color = C.Discret, fontSize = 10.5.sp, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+        taux?.let { Text(Portfolio.pctAbs(it, 2) + "  ", color = C.Or, fontSize = 11.sp) }
+        Text(Portfolio.eur(montant), fontWeight = FontWeight.SemiBold, fontSize = 12.5.sp)
     }
 }
 
@@ -365,30 +372,31 @@ private fun MenuCategories(vm: PortfolioViewModel, toutes: List<fr.eq.patrimo.do
     }
 }
 
+/** Liste détaillée des titres de la sélection, dans un bandeau repliable (fermé par défaut). */
 @Composable
-fun Placements(vm: PortfolioViewModel) {
-    val lignes by vm.lignes.collectAsStateWithLifecycle()
+fun DetailTitres(vm: PortfolioViewModel, lignes: List<Ligne>, vars: Map<Long, fr.eq.patrimo.domain.Variations>) {
+    var ouvert by rememberSaveable { mutableStateOf(false) }
     val contrats by vm.contrats.collectAsStateWithLifecycle()
-    val vars by vm.variations.collectAsStateWithLifecycle()
-    val categorie by vm.categorie.collectAsStateWithLifecycle()
-    val comptes by vm.comptes.collectAsStateWithLifecycle()
     var tri by remember { mutableStateOf(Tri.VALEUR) }
     var desc by remember { mutableStateOf(true) }
     // Fiche ouverte : null = fermée ; Position(id = 0) = nouvelle ligne
     var fiche by remember { mutableStateOf<Position?>(null) }
     var nouvelle by remember { mutableStateOf(false) }
     if (fiche != null || nouvelle) FicheLigne(fiche, contrats, false, vm::enregistrerPosition, vm::supprimerPosition, vm::appliquer) { fiche = null; nouvelle = false }
-    if (lignes.isEmpty()) { Vide(); return }
-    val vues = lignes.filter { (categorie == null || it.p.enveloppe == categorie) && (comptes.isEmpty() || it.p.contrat in comptes) }.sortedBy {
+    if (lignes.isEmpty()) return
+    val vues = lignes.sortedBy {
         when (tri) { Tri.INVESTI -> it.investi; Tri.VALEUR -> it.valeur; Tri.GAIN -> it.gain; Tri.PERF -> it.perf }
     }.let { if (desc) it.reversed() else it }
-    Column(Modifier.padding(horizontal = 12.dp)) {
-        Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(listOfNotNull(categorie ?: "Tous les titres", comptes.takeIf { it.isNotEmpty() }?.joinToString()).joinToString(" · "),
-                color = C.Discret, fontSize = 13.sp, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-            OutlinedButton(onClick = { nouvelle = true }, shape = RoundedCornerShape(12.dp)) { Icon(Icons.Default.Add, null); Text(" Ajouter") }
+    Column(Modifier.fillMaxWidth().padding(top = 12.dp).background(C.Carte, RoundedCornerShape(16.dp)).padding(horizontal = 10.dp, vertical = 4.dp)) {
+        Row(Modifier.fillMaxWidth().clickable { ouvert = !ouvert }.padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(if (ouvert) "▾" else "▸", color = C.Or, fontSize = 16.sp)
+            Text("  Détail des titres (${vues.size})", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, modifier = Modifier.weight(1f))
+            if (ouvert) TextButton(onClick = { nouvelle = true }) { Icon(Icons.Default.Add, null, Modifier.size(16.dp)); Text(" Ajouter", fontSize = 12.sp) }
         }
-        MenuCategories(vm, lignes)
+        if (!ouvert) return@Column
+        if (vars.isNotEmpty()) Top3Cartes(listOf("jour", "semaine", "mois").mapIndexed { i, t ->
+            t to vues.mapNotNull { l -> vars[l.p.id]?.avec5ans?.get(i)?.second?.let { Triple(l.p.libelle, it, l.p) } }
+        }) { fiche = it }
         Row(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
             Text("Titre", color = C.Discret, fontSize = 12.sp, modifier = Modifier.weight(1.6f))
             Tri.entries.forEach { t ->
@@ -396,13 +404,8 @@ fun Placements(vm: PortfolioViewModel) {
                     textAlign = TextAlign.End, modifier = Modifier.weight(1f).clickable { if (tri == t) desc = !desc else { tri = t; desc = true } })
             }
         }
-        LazyColumn(Modifier.weight(1f)) {
-            if (vars.isNotEmpty()) item {
-                Top3Cartes(listOf("jour", "semaine", "mois").mapIndexed { i, t ->
-                    t to vues.mapNotNull { l -> vars[l.p.id]?.avec5ans?.get(i)?.second?.let { Triple(l.p.libelle, it, l.p) } }
-                }) { fiche = it }
-            }
-            items(vues, key = { it.p.id }) { l ->
+        run {
+            vues.forEach { l -> key(l.p.id) {
                 Column(Modifier.fillMaxWidth().clickable { fiche = l.p }.padding(vertical = 8.dp)) {
                 // Nom du fonds sur toute la largeur de l'écran
                 // Nom du fonds + nombre de parts détenues (toujours visible, le nom est tronqué si besoin)
@@ -424,8 +427,8 @@ fun Placements(vm: PortfolioViewModel) {
                 }
                 vars[l.p.id]?.let { v -> VariationsLigne(v) }
                 }
-            }
-            item {
+            } }
+            run {
                 Pointilles(Modifier.padding(top = 6.dp))
                 val inv = vues.sumOf { it.investi }; val v = vues.sumOf { it.valeur }
                 Row(Modifier.fillMaxWidth().padding(vertical = 12.dp)) {
@@ -673,6 +676,12 @@ fun PageAccueil(montrer: Boolean) {
         val t = apparition.value
         // Hauteur d'écran fixe : l'ouverture du clavier ne doit ni recadrer l'image ni déplacer les cases
         val hEcran = androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp.dp
+        val activite = androidx.compose.ui.platform.LocalContext.current as? android.app.Activity
+        DisposableEffect(Unit) {
+            activite?.window?.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING)
+            onDispose { activite?.window?.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE) }
+        }
+        var actif by remember { mutableStateOf(false) }
         Box(Modifier.fillMaxSize().background(C.Fond).clickable(
             interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, indication = null) { }) {
             Image(painterResource(R.drawable.accueil_ker), contentDescription = "Ker Patrimo", contentScale = ContentScale.Crop,
@@ -690,6 +699,7 @@ fun PageAccueil(montrer: Boolean) {
                     onValueChange = { v -> val c = v.filter { it.isDigit() }.take(4); if (c.length < saisie.length) { saisie = c; erreur = false } else c.drop(saisie.length).forEach { taper(it.toString()) } },
                     keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.NumberPassword),
                     modifier = Modifier.size(1.dp).graphicsLayer { alpha = 0f }.focusRequester(focus)
+                        .onFocusChanged { actif = it.isFocused }
                 )
                 Row(Modifier.align(Alignment.TopCenter).padding(top = hEcran * 0.285f)
                     .graphicsLayer { alpha = ((t - 0.5f) * 2f).coerceIn(0f, 1f); translationX = secousse.value }
@@ -697,8 +707,12 @@ fun PageAccueil(montrer: Boolean) {
                         runCatching { focus.requestFocus(); clavier?.show() } },
                     horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     repeat(4) { i ->
-                        Box(Modifier.size(46.dp).background(Color(0x990D0F14), RoundedCornerShape(10.dp))
-                            .border(1.5.dp, if (erreur) C.Baisse else C.Or.copy(alpha = if (i == saisie.length) 1f else .6f), RoundedCornerShape(10.dp)),
+                        val courante = actif && i == saisie.length
+                        Box(Modifier.size(46.dp)
+                            .shadow(if (courante) 10.dp else 0.dp, RoundedCornerShape(10.dp), ambientColor = C.Or, spotColor = C.Or)
+                            .background(if (actif) Color(0xCC1A1608) else Color(0x990D0F14), RoundedCornerShape(10.dp))
+                            .border(if (courante) 2.5.dp else 1.5.dp,
+                                if (erreur) C.Baisse else C.Or.copy(alpha = if (courante) 1f else if (actif) .85f else .5f), RoundedCornerShape(10.dp)),
                             contentAlignment = Alignment.Center) {
                             if (i < saisie.length) Box(Modifier.size(12.dp).background(C.Or, CircleShape))
                         }
@@ -732,7 +746,7 @@ fun Top3Cartes(
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 groupes.forEach { (titre, valeurs) ->
                     val top = (if (meilleurs) valeurs.sortedByDescending { it.second } else valeurs.sortedBy { it.second }).take(5)
-                    Column(Modifier.weight(1f).background(C.Carte, RoundedCornerShape(12.dp)).padding(horizontal = 7.dp, vertical = 6.dp)) {
+                    Column(Modifier.weight(1f).background(C.Carte2, RoundedCornerShape(12.dp)).padding(horizontal = 7.dp, vertical = 6.dp)) {
                         Text((if (meilleurs) "Top 5 " else "Flop 5 ") + titre, color = if (meilleurs) C.Or else C.Baisse,
                             fontWeight = FontWeight.Bold, fontSize = 10.5.sp)
                         if (top.isEmpty()) Text("—", color = C.Discret, fontSize = 10.sp)
