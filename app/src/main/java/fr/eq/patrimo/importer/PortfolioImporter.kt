@@ -23,7 +23,7 @@ object PortfolioImporter {
         }
         // 2. Modèle Ker Patrimo : un onglet par catégorie ; l'enveloppe est déduite de l'onglet.
         //    Ancien format : onglet unique « Positions ».
-        val onglets = listOf("Assurances vie" to "Assurance vie", "PEA" to "PEA", "Comptes-titres" to "CTO", "Crypto" to "Crypto")
+        val onglets = listOf("Assurances vie" to "Assurance vie", "PEA" to "PEA", "Comptes-titres" to "CTO", "Crypto" to "Crypto", "PER" to "PER", "PEE" to "PEE")
         var positions = onglets.flatMap { (nom, env) -> classeur.onglet(nom).orEmpty().mapNotNull { toPosition(it, env) } }
         if (positions.isEmpty()) positions = classeur.onglet("Positions", premierSiAbsent = true).orEmpty().mapNotNull { toPosition(it, null) }
         val saisis = classeur.onglet("Contrats").orEmpty().mapNotNull(::toContrat).associateBy { it.etablissement to it.contrat }

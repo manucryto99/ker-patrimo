@@ -102,7 +102,7 @@ fun FicheLigne(
                     OutlinedTextField(etab, { etab = it }, label = { Text("Établissement") }, singleLine = true, modifier = Modifier.weight(1f))
                     OutlinedTextField(contrat, { contrat = it }, label = { Text("Contrat") }, singleLine = true, modifier = Modifier.weight(1f))
                 }
-                OutlinedTextField(enveloppe, { enveloppe = it }, label = { Text("Enveloppe (Assurance vie, PEA, CTO, Crypto…)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(enveloppe, { enveloppe = it }, label = { Text("Enveloppe (Assurance vie, PEA, CTO, PER, PEE, Crypto…)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 if (sansCotation) {
                     OutlinedTextField(valeur, { valeur = it }, label = { Text("Valeur (€)") }, singleLine = true, keyboardOptions = dec, modifier = Modifier.fillMaxWidth())
                     if (type == "Fonds euros") OutlinedTextField(taux, { taux = it }, label = { Text("Taux annuel net (%)") }, singleLine = true, keyboardOptions = dec, modifier = Modifier.fillMaxWidth())

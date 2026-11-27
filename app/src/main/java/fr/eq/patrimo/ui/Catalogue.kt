@@ -104,7 +104,8 @@ fun Catalogue(vm: PortfolioViewModel, ouvrirAssistant: () -> Unit) {
         val visibles = if (q.isEmpty()) entrees else entrees.filter { norm(it.libelle).contains(q) || it.isin.orEmpty().lowercase().contains(q) }
 
         // PEA / CTO : l'univers est trop vaste pour une liste → on interroge l'assistant
-        val bourse = !courant.enveloppe.contains("assurance", true)
+        // PEA / CTO : univers trop vaste → assistant ; assurance vie, PER, PEE : liste de fonds importée
+        val bourse = courant.enveloppe.contains("PEA", true) || courant.enveloppe.contains("CTO", true) || courant.enveloppe.contains("titre", true)
         if (bourse) {
             fun envoyer(q: String) {
                 if (q.isBlank()) return

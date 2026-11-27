@@ -239,6 +239,16 @@ class PortfolioViewModel(app: Application) : AndroidViewModel(app) {
     val chat = _chat.asStateFlow()
 
     init {
+        // Enveloppes d'épargne retraite / salariale : contrats créés s'ils n'existent pas (frais modifiables dans les Réglages)
+        viewModelScope.launch {
+            val existants = dao.contrats().map { it.etablissement to it.contrat }.toSet()
+            val voulus = listOf(
+                fr.eq.patrimo.data.Contrat("Amundi", "PER Amundi", "PER", source = "créé dans l'appli", modifie = true),
+                fr.eq.patrimo.data.Contrat("Amundi", "PEE Amundi", "PEE", source = "créé dans l'appli", modifie = true),
+                fr.eq.patrimo.data.Contrat("CIC", "PEE CIC", "PEE", source = "créé dans l'appli", modifie = true))
+            val manquants = voulus.filter { (it.etablissement to it.contrat) !in existants }
+            if (manquants.isNotEmpty()) dao.insertContrats(manquants)
+        }
         refresh(silencieux = true)
         // Rafraîchissement automatique tant que l'appli est ouverte (cours différés ~15 min selon la place)
         viewModelScope.launch { while (true) { delay(5 * 60_000L); refresh(silencieux = true) } }
