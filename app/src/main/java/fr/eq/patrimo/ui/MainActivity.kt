@@ -387,6 +387,18 @@ fun DetailTitres(vm: PortfolioViewModel, lignes: List<Ligne>, vars: Map<Long, fr
     val vues = lignes.sortedBy {
         when (tri) { Tri.INVESTI -> it.investi; Tri.VALEUR -> it.valeur; Tri.GAIN -> it.gain; Tri.PERF -> it.perf }
     }.let { if (desc) it.reversed() else it }
+    // Bandeau repliable à part : Top 5 / Flop 5
+    var topOuvert by rememberSaveable { mutableStateOf(false) }
+    if (vars.isNotEmpty()) Column(Modifier.fillMaxWidth().padding(top = 12.dp).background(C.Carte, RoundedCornerShape(16.dp)).padding(horizontal = 10.dp, vertical = 4.dp)) {
+        Row(Modifier.fillMaxWidth().clickable { topOuvert = !topOuvert }.padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(if (topOuvert) "▾" else "▸", color = C.Or, fontSize = 16.sp)
+            Text("  Top 5 / Flop 5", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, modifier = Modifier.weight(1f))
+            Text("jour · semaine · mois", color = C.Discret, fontSize = 11.sp)
+        }
+        if (topOuvert) Top3Cartes(listOf("jour", "semaine", "mois").mapIndexed { i, t ->
+            t to vues.mapNotNull { l -> vars[l.p.id]?.avec5ans?.get(i)?.second?.let { Triple(l.p.libelle, it, l.p) } }
+        }) { fiche = it }
+    }
     Column(Modifier.fillMaxWidth().padding(top = 12.dp).background(C.Carte, RoundedCornerShape(16.dp)).padding(horizontal = 10.dp, vertical = 4.dp)) {
         Row(Modifier.fillMaxWidth().clickable { ouvert = !ouvert }.padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(if (ouvert) "▾" else "▸", color = C.Or, fontSize = 16.sp)
@@ -394,9 +406,6 @@ fun DetailTitres(vm: PortfolioViewModel, lignes: List<Ligne>, vars: Map<Long, fr
             if (ouvert) TextButton(onClick = { nouvelle = true }) { Icon(Icons.Default.Add, null, Modifier.size(16.dp)); Text(" Ajouter", fontSize = 12.sp) }
         }
         if (!ouvert) return@Column
-        if (vars.isNotEmpty()) Top3Cartes(listOf("jour", "semaine", "mois").mapIndexed { i, t ->
-            t to vues.mapNotNull { l -> vars[l.p.id]?.avec5ans?.get(i)?.second?.let { Triple(l.p.libelle, it, l.p) } }
-        }) { fiche = it }
         Row(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
             Text("Titre", color = C.Discret, fontSize = 12.sp, modifier = Modifier.weight(1.6f))
             Tri.entries.forEach { t ->
