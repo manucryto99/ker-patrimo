@@ -12,8 +12,8 @@ android {
         applicationId = "fr.eq.patrimo"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1"
+        versionCode = (System.getenv("GITHUB_RUN_NUMBER") ?: "1").toInt()
+        versionName = "v" + (System.getenv("GITHUB_RUN_NUMBER") ?: "dev")
     }
     // Clé de signature fixe : chaque nouvelle version s'installe par-dessus l'ancienne sans perdre les données.
     // (Dépôt privé uniquement : ne publiez pas ce fichier.)

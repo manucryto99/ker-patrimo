@@ -135,6 +135,7 @@ fun App(vm: PortfolioViewModel) {
     LaunchedEffect(Unit) { if (Build.VERSION.SDK_INT >= 33) notifLauncher.launch(Manifest.permission.POST_NOTIFICATIONS) }
     LaunchedEffect(info) { info?.let { snack.showSnackbar(it); vm.clearInfo() } }
     if (reglages) { ReglagesEcran(vm, snack) { reglages = false }; return }
+    val activiteCourante = androidx.compose.ui.platform.LocalContext.current
     // Import : barre de progression visible quel que soit l'onglet, puis bilan
     val progression by vm.progression.collectAsStateWithLifecycle()
     val bilan by vm.bilan.collectAsStateWithLifecycle()
@@ -156,6 +157,9 @@ fun App(vm: PortfolioViewModel) {
                     .padding(2.5.dp).clip(CircleShape)) {
                     Image(painterResource(R.drawable.medaillon_enfant), contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
                 }
+                // Numéro de version (pour vérifier la mise à jour installée)
+                val version = remember { runCatching { activiteCourante?.packageManager?.getPackageInfo(activiteCourante.packageName, 0)?.versionName }.getOrNull() ?: "" }
+                Text(" $version", color = C.Discret, fontSize = 10.sp)
                 Spacer(Modifier.weight(1f))
                 if (busy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = C.Or)
                 IconButton(onClick = { vm.refresh() }) { Icon(Icons.Default.Refresh, "Actualiser les cours") }
