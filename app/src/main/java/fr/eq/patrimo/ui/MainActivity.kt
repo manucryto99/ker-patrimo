@@ -400,8 +400,13 @@ fun Placements(vm: PortfolioViewModel) {
             items(vues, key = { it.p.id }) { l ->
                 Column(Modifier.fillMaxWidth().clickable { fiche = l.p }.padding(vertical = 8.dp)) {
                 // Nom du fonds sur toute la largeur de l'écran
-                Text(l.p.libelle, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.fillMaxWidth())
+                // Nom du fonds + nombre de parts détenues (toujours visible, le nom est tronqué si besoin)
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text(l.p.libelle, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false))
+                    if (l.p.quantite > 0) Text(" (${formatParts(l.parts, l.p.type)} ${if (l.parts > 1) "parts" else "part"})",
+                        fontSize = 12.sp, color = C.Parts, fontWeight = FontWeight.Medium, maxLines = 1)
+                }
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1.6f)) {
                         Text(l.p.enveloppe + (l.p.source?.let { " · $it" } ?: ""), color = C.Discret, fontSize = 11.sp)
@@ -712,4 +717,16 @@ fun PageAccueil(montrer: Boolean) {
             }
         }
     }
+}
+
+/** Nombre de parts lisible : entier sans décimale, crypto jusqu'à 6 décimales, fonds jusqu'à 4 ; zéros inutiles retirés. */
+fun formatParts(q: Double, type: String?): String {
+    val dec = when {
+        kotlin.math.abs(q - kotlin.math.round(q)) < 1e-9 -> 0
+        type?.contains("crypto", true) == true -> 6
+        q >= 1000 -> 2
+        else -> 4
+    }
+    val nf = java.text.NumberFormat.getNumberInstance(Locale.FRANCE).apply { minimumFractionDigits = 0; maximumFractionDigits = dec }
+    return nf.format(q)
 }
