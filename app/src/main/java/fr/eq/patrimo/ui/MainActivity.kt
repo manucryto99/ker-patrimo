@@ -367,9 +367,11 @@ fun Placements(vm: PortfolioViewModel) {
         LazyColumn(Modifier.weight(1f)) {
             items(vues, key = { it.p.id }) { l ->
                 Column(Modifier.fillMaxWidth().clickable { fiche = l.p }.padding(vertical = 8.dp)) {
+                // Nom du fonds sur toute la largeur de l'écran
+                Text(l.p.libelle, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.fillMaxWidth())
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1.6f)) {
-                        Text(l.p.libelle, fontSize = 13.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
                         Text(l.p.enveloppe + (l.p.source?.let { " · $it" } ?: ""), color = C.Discret, fontSize = 11.sp)
                         if (l.fraisTotauxAn > 0.5) Text("frais ${Portfolio.eur(l.fraisTotauxAn)}/an" +
                             (if (l.partsPerdues > 0.0005) " · ${String.format(Locale.FRANCE, "%.3f", l.parts)} parts est." else ""),
@@ -389,15 +391,30 @@ fun Placements(vm: PortfolioViewModel) {
                     Cellule(Portfolio.signe(v - inv), C.signe(v - inv), true)
                     Cellule(Portfolio.pct(if (inv > 0) (v - inv) / inv else 0.0), C.signe(v - inv), true)
                 }
-                Row(Modifier.fillMaxWidth().padding(bottom = 16.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                    fr.eq.patrimo.domain.Horizon.entries.forEach { h ->
-                        val (d, p) = Portfolio.variation(vues, vars, h)
-                        Column {
-                            Text(h.label, color = C.Discret, fontSize = 11.sp)
-                            Text(Portfolio.signe(d), color = C.signe(d), fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                            Text(Portfolio.pct(p), color = C.signe(d), fontSize = 11.sp)
+                // Variations du total : J, 1S, 1M, 3M, 6M, 1A, 5A (4 par ligne)
+                val horizons = fr.eq.patrimo.domain.Variations(null, null, null).avec5ans.map { it.first }
+                val labels = mapOf("J" to "Jour", "1S" to "1 sem.", "1M" to "1 mois", "3M" to "3 mois", "6M" to "6 mois", "1A" to "1 an", "5A" to "5 ans")
+                var partielle = false
+                Column(Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
+                    horizons.indices.chunked(4).forEach { groupe ->
+                        Row(Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
+                            groupe.forEach { i ->
+                                val (d, p, couverture) = Portfolio.variationHorizon(vues, vars, i)
+                                if (couverture in 0.01..0.95) partielle = true
+                                Column(Modifier.weight(1f)) {
+                                    Text(labels[horizons[i]] ?: horizons[i], color = C.Discret, fontSize = 11.sp)
+                                    if (couverture < 0.01) Text("—", color = C.Discret, fontSize = 13.sp)
+                                    else {
+                                        Text(Portfolio.signe(d), color = C.signe(d), fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                                        Text(Portfolio.pct(p), color = C.signe(d), fontSize = 11.sp)
+                                    }
+                                }
+                            }
+                            repeat(4 - groupe.size) { Spacer(Modifier.weight(1f)) }
                         }
                     }
+                    if (partielle) Text("Sur les longues durées, seuls les titres ayant un historique suffisant sont comptés (fonds euros et titres récents exclus).",
+                        color = C.Discret, fontSize = 11.sp)
                 }
             }
         }

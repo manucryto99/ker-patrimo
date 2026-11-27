@@ -41,11 +41,13 @@ enum class Periode(val label: String, val jours: Long, val secondes: Long = 0) {
 
 /** Variations relatives d'une ligne cotée (null = pas de cours / pas d'historique). */
 data class Variations(val jour: Double?, val semaine: Double?, val mois: Double?,
-                      val mois3: Double? = null, val mois6: Double? = null, val an1: Double? = null) {
+                      val mois3: Double? = null, val mois6: Double? = null, val an1: Double? = null, val an5: Double? = null) {
     fun selon(h: Horizon) = when (h) { Horizon.JOUR -> jour; Horizon.SEMAINE -> semaine; Horizon.MOIS -> mois }
     /** Les 6 horizons affichés sous chaque titre. */
     val toutes: List<Pair<String, Double?>> get() =
         listOf("J" to jour, "1S" to semaine, "1M" to mois, "3M" to mois3, "6M" to mois6, "1A" to an1)
+    /** Tous les horizons, 5 ans compris (bloc Total). */
+    val avec5ans: List<Pair<String, Double?>> get() = toutes + ("5A" to an5)
 }
 
 /** Performances d'un titre sur 1J / 1S / 1M / 6M / 1A / 5A (null = pas de données). */
@@ -164,6 +166,18 @@ object Portfolio {
         val d = lignes.sumOf { deltaEur(it.valeur, vars[it.p.id]?.selon(h)) }
         val avant = lignes.sumOf { it.valeur } - d
         return d to (if (avant > 0) d / avant else 0.0)
+    }
+
+    /**
+     * Variation agrégée sur l'horizon n° i de [Variations.avec5ans], calculée sur les seules lignes qui ont un historique
+     * suffisant : (€, %, part de la valeur couverte).
+     */
+    fun variationHorizon(lignes: List<Ligne>, vars: Map<Long, Variations>, i: Int): Triple<Double, Double, Double> {
+        val avec = lignes.mapNotNull { l -> vars[l.p.id]?.avec5ans?.getOrNull(i)?.second?.let { l to it } }
+        val d = avec.sumOf { (l, v) -> deltaEur(l.valeur, v) }
+        val avant = avec.sumOf { it.first.valeur } - d
+        val tot = lignes.sumOf { it.valeur }
+        return Triple(d, if (avant > 0) d / avant else 0.0, if (tot > 0) avec.sumOf { it.first.valeur } / tot else 0.0)
     }
 
     fun parEnveloppe(lignes: List<Ligne>): List<Pair<String, Double>> =
