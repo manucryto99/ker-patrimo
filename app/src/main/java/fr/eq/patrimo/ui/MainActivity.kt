@@ -284,10 +284,10 @@ fun Accueil(vm: PortfolioViewModel) {
         if (parContrat.size > 1) Carte(titre = "Plus et moins-values par portefeuille") {
             val maxAbs = parContrat.maxOf { kotlin.math.abs(it.second) }.takeIf { it > 0 } ?: 1.0
             parContrat.forEach { (c, g) ->
-                Row(Modifier.fillMaxWidth().padding(vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text(c, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(0.9f))
+                Row(Modifier.fillMaxWidth().padding(vertical = 1.5.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(c, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(0.9f))
                     // barre divergente : pertes à gauche de l'axe, gains à droite
-                    Row(Modifier.weight(1.6f).height(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Row(Modifier.weight(1.6f).height(10.dp), verticalAlignment = Alignment.CenterVertically) {
                         val f = (kotlin.math.abs(g) / maxAbs).toFloat().coerceIn(0.02f, 1f)
                         Box(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.CenterEnd) {
                             if (g < 0) Box(Modifier.fillMaxWidth(f).fillMaxHeight().background(C.Baisse, RoundedCornerShape(topStart = 4.dp, bottomStart = 4.dp)))
@@ -297,7 +297,7 @@ fun Accueil(vm: PortfolioViewModel) {
                             if (g >= 0) Box(Modifier.fillMaxWidth(f).fillMaxHeight().background(C.Hausse, RoundedCornerShape(topEnd = 4.dp, bottomEnd = 4.dp)))
                         }
                     }
-                    Text(Portfolio.signe(g), color = C.signe(g), fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1,
+                    Text(Portfolio.signe(g), color = C.signe(g), fontSize = 11.sp, fontWeight = FontWeight.SemiBold, maxLines = 1,
                         textAlign = TextAlign.End, modifier = Modifier.weight(0.9f))
                 }
             }
@@ -437,10 +437,24 @@ fun DetailTitres(vm: PortfolioViewModel, lignes: List<Ligne>, vars: Map<Long, fr
                 vars[l.p.id]?.let { v -> VariationsLigne(v) }
                 }
             } }
-            run {
-                Pointilles(Modifier.padding(top = 6.dp))
+        }
+    }
+    // Bandeau repliable à part : totaux et variations du total
+    var totOuvert by rememberSaveable { mutableStateOf(false) }
+    Column(Modifier.fillMaxWidth().padding(top = 12.dp).background(C.Carte, RoundedCornerShape(16.dp)).padding(horizontal = 10.dp, vertical = 4.dp)) {
+        val tInv = vues.sumOf { it.investi }; val tVal = vues.sumOf { it.valeur }
+        Row(Modifier.fillMaxWidth().clickable { totOuvert = !totOuvert }.padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(if (totOuvert) "▾" else "▸", color = C.Or, fontSize = 16.sp)
+            Text("  Totaux", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, modifier = Modifier.weight(1f))
+            Text(Portfolio.signe(tVal - tInv), color = C.signe(tVal - tInv), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+        }
+        if (totOuvert) Column {
+                Row(Modifier.fillMaxWidth()) {
+                    Spacer(Modifier.weight(1.6f))
+                    listOf("Investi", "Valeur", "+/- €", "+/- %").forEach { Text(it, color = C.Discret, fontSize = 11.sp, textAlign = TextAlign.End, modifier = Modifier.weight(1f)) }
+                }
                 val inv = vues.sumOf { it.investi }; val v = vues.sumOf { it.valeur }
-                Row(Modifier.fillMaxWidth().padding(vertical = 12.dp)) {
+                Row(Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 10.dp)) {
                     Text("Total", fontWeight = FontWeight.Bold, fontSize = 13.sp, modifier = Modifier.weight(1.6f))
                     Cellule(Portfolio.eur(inv), bold = true); Cellule(Portfolio.eur(v), bold = true)
                     Cellule(Portfolio.signe(v - inv), C.signe(v - inv), true)
@@ -467,7 +481,7 @@ fun DetailTitres(vm: PortfolioViewModel, lignes: List<Ligne>, vars: Map<Long, fr
                     if (partielle) Text("Sur les longues durées, seuls les titres ayant un historique suffisant sont comptés (fonds euros et titres récents exclus).",
                         color = C.Discret, fontSize = 10.sp)
                 }
-            }
+            
         }
     }
 }
