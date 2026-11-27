@@ -190,13 +190,21 @@ fun Accueil(vm: PortfolioViewModel) {
     val horizon by vm.horizon.collectAsStateWithLifecycle()
     if (toutes.isEmpty()) { Vide(); return }
     // Tableau de bord par catégorie : Tout / Assurance vie / PEA / CTO / Crypto
-    val categories = Portfolio.parEnveloppe(toutes).map { it.first }
+    // Catégories : celles qui ont des lignes, puis celles des contrats encore vides (ex. PER, PEE)
+    val contrats by vm.contrats.collectAsStateWithLifecycle()
+    val categories = (Portfolio.parEnveloppe(toutes).map { it.first } + contrats.map { it.enveloppe }).distinct()
     val lignesCat = toutes.filter { categorie == null || it.p.enveloppe == categorie }
     // Contrats cochés : tous les indicateurs ci-dessous ne portent que sur eux
     val lignes = lignesCat.filter { comptes.isEmpty() || it.p.contrat in comptes }
     val total = lignes.sumOf { it.valeur }
     Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
         MenuCategories(vm, toutes)
+        if (lignes.isEmpty()) {
+            Text("Aucune ligne dans ${categorie ?: "cette sélection"} pour l'instant.", color = C.Discret, modifier = Modifier.padding(top = 24.dp))
+            Text("Importe un fichier (bouton Importer) ou ajoute une ligne : les autres contrats ne seront pas touchés.",
+                color = C.Discret, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp))
+            return@Column
+        }
         Text(when {
             categorie == null -> "Patrimoine financier"
             comptes.isEmpty() -> categorie!!
