@@ -11,7 +11,8 @@ import java.time.format.DateTimeFormatter
 /** Transforme l'onglet « Positions » du modèle Excel en liste de [Position]. */
 object PortfolioImporter {
 
-    data class Resultat(val positions: List<Position>, val contrats: List<Contrat>)
+    /** complet = classeur de suivi (remplace tout) ; sinon fichier partiel : seuls les contrats qu'il contient sont remplacés. */
+    data class Resultat(val positions: List<Position>, val contrats: List<Contrat>, val complet: Boolean = false)
 
     fun lire(input: InputStream): Resultat {
         val classeur = XlsxReader.ouvrir(input)
@@ -19,7 +20,7 @@ object PortfolioImporter {
         MesPlacementsImporter.lire(classeur)?.takeIf { it.isNotEmpty() }?.let { pos ->
             val contrats = pos.map { Triple(it.etablissement, it.contrat, it.enveloppe) }.distinct()
                 .map { (e, c, env) -> Frais.parDefaut(e, c, env) }
-            return Resultat(pos, contrats)
+            return Resultat(pos, contrats, complet = true)
         }
         // 2. Modèle Ker Patrimo : un onglet par catégorie ; l'enveloppe est déduite de l'onglet.
         //    Ancien format : onglet unique « Positions ».

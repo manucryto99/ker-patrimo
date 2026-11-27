@@ -296,8 +296,16 @@ class PortfolioViewModel(app: Application) : AndroidViewModel(app) {
                 val positions = list.positions.map { p ->
                     if (p.fraisAnnuels == null) p.copy(fraisAnnuels = anciensFrais[p.isin to p.contrat]) else p
                 }
-                dao.replaceImport(positions, contrats)
-                _info.value = "${list.positions.size} placements importés, recherche des cours…"
+                if (list.complet) dao.replaceImport(positions, contrats)
+                else {
+                    // Fichier partiel (ex. un PEE ou un PER) : on ne remplace que les contrats présents dans le fichier
+                    val touches = positions.map { it.etablissement to it.contrat }.toSet()
+                    val gardees = dao.positions().filter { (it.etablissement to it.contrat) !in touches }
+                    val tousContrats = (dao.contrats().filter { (it.etablissement to it.contrat) !in touches } + contrats)
+                        .distinctBy { it.etablissement to it.contrat }
+                    dao.replaceImport(gardees + positions, tousContrats)
+                }
+                _info.value = "${list.positions.size} placements importés" + (if (list.complet) "" else " (ajoutés au reste du patrimoine)") + ", recherche des cours…"
                 quotes.refreshAll(withHistory = true).also { historyVersion.update { v -> v + 1 } }
                 _info.value = "Import terminé"
             }.onFailure { _info.value = "Import impossible : ${it.message}" }
