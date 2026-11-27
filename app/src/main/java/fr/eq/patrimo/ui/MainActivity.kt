@@ -397,6 +397,11 @@ fun Placements(vm: PortfolioViewModel) {
             }
         }
         LazyColumn(Modifier.weight(1f)) {
+            if (vars.isNotEmpty()) item {
+                Top3Cartes(listOf("jour", "semaine", "mois").mapIndexed { i, t ->
+                    t to vues.mapNotNull { l -> vars[l.p.id]?.avec5ans?.get(i)?.second?.let { Triple(l.p.libelle, it, l.p) } }
+                }) { fiche = it }
+            }
             items(vues, key = { it.p.id }) { l ->
                 Column(Modifier.fillMaxWidth().clickable { fiche = l.p }.padding(vertical = 8.dp)) {
                 // Nom du fonds sur toute la largeur de l'écran
@@ -421,6 +426,7 @@ fun Placements(vm: PortfolioViewModel) {
                 }
             }
             item {
+                Pointilles(Modifier.padding(top = 6.dp))
                 val inv = vues.sumOf { it.investi }; val v = vues.sumOf { it.valeur }
                 Row(Modifier.fillMaxWidth().padding(vertical = 12.dp)) {
                     Text("Total", fontWeight = FontWeight.Bold, fontSize = 13.sp, modifier = Modifier.weight(1.6f))
@@ -428,30 +434,26 @@ fun Placements(vm: PortfolioViewModel) {
                     Cellule(Portfolio.signe(v - inv), C.signe(v - inv), true)
                     Cellule(Portfolio.pct(if (inv > 0) (v - inv) / inv else 0.0), C.signe(v - inv), true)
                 }
-                // Variations du total : J, 1S, 1M, 3M, 6M, 1A, 5A (4 par ligne)
+                // Variations du total : J, 1S, 1M, 3M, 6M, 1A, 5A sur une seule ligne, police réduite
                 val horizons = fr.eq.patrimo.domain.Variations(null, null, null).avec5ans.map { it.first }
-                val labels = mapOf("J" to "Jour", "1S" to "1 sem.", "1M" to "1 mois", "3M" to "3 mois", "6M" to "6 mois", "1A" to "1 an", "5A" to "5 ans")
                 var partielle = false
                 Column(Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
-                    horizons.indices.chunked(4).forEach { groupe ->
-                        Row(Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
-                            groupe.forEach { i ->
-                                val (d, p, couverture) = Portfolio.variationHorizon(vues, vars, i)
-                                if (couverture in 0.01..0.95) partielle = true
-                                Column(Modifier.weight(1f)) {
-                                    Text(labels[horizons[i]] ?: horizons[i], color = C.Discret, fontSize = 11.sp)
-                                    if (couverture < 0.01) Text("—", color = C.Discret, fontSize = 13.sp)
-                                    else {
-                                        Text(Portfolio.signe(d), color = C.signe(d), fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
-                                        Text(Portfolio.pct(p), color = C.signe(d), fontSize = 11.sp)
-                                    }
+                    Row(Modifier.fillMaxWidth().padding(bottom = 6.dp)) {
+                        horizons.indices.forEach { i ->
+                            val (d, p, couverture) = Portfolio.variationHorizon(vues, vars, i)
+                            if (couverture in 0.01..0.95) partielle = true
+                            Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(horizons[i], color = C.Discret, fontSize = 10.sp)
+                                if (couverture < 0.01) Text("—", color = C.Discret, fontSize = 11.sp)
+                                else {
+                                    Text(eurCompact(d), color = C.signe(d), fontSize = 11.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                                    Text(Portfolio.pct(p).replace(" ", ""), color = C.signe(d), fontSize = 9.5.sp, maxLines = 1)
                                 }
                             }
-                            repeat(4 - groupe.size) { Spacer(Modifier.weight(1f)) }
                         }
                     }
                     if (partielle) Text("Sur les longues durées, seuls les titres ayant un historique suffisant sont comptés (fonds euros et titres récents exclus).",
-                        color = C.Discret, fontSize = 11.sp)
+                        color = C.Discret, fontSize = 10.sp)
                 }
             }
         }
@@ -544,21 +546,9 @@ fun Surveiller(vm: PortfolioViewModel) {
         if (liste.isEmpty()) item { Text("Rien à surveiller pour l'instant.", color = C.Discret) }
         // Top 3 du jour, de la semaine et du mois
         if (perfs.isNotEmpty()) item {
-            Row(Modifier.fillMaxWidth().padding(bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf(0 to "Top 3 jour", 1 to "Top 3 semaine", 2 to "Top 3 mois").forEach { (i, titre) ->
-                    val top = liste.mapNotNull { p -> perfs[p.id]?.get(i)?.let { p to it } }.sortedByDescending { it.second }.take(3)
-                    Column(Modifier.weight(1f).background(C.Carte, RoundedCornerShape(14.dp)).padding(10.dp)) {
-                        Text(titre, color = C.Or, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                        if (top.isEmpty()) Text("—", color = C.Discret, fontSize = 12.sp)
-                        top.forEachIndexed { rang, (p, v) ->
-                            Column(Modifier.padding(top = 6.dp).clickable { fiche = p }) {
-                                Text("${rang + 1}. ${p.libelle}", fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                Text(Portfolio.pct(v), color = C.signe(v), fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                            }
-                        }
-                    }
-                }
-            }
+            Top3Cartes(listOf("jour", "semaine", "mois").mapIndexed { i, t ->
+                t to liste.mapNotNull { p -> perfs[p.id]?.get(i)?.let { Triple(p.libelle, it, p) } }
+            }) { fiche = it }
         }
         items(liste, key = { it.id }) { p ->
             val varJour = p.dernierCours?.let { c -> p.coursVeille?.takeIf { it > 0 }?.let { c / it - 1 } }
@@ -729,4 +719,48 @@ fun formatParts(q: Double, type: String?): String {
     }
     val nf = java.text.NumberFormat.getNumberInstance(Locale.FRANCE).apply { minimumFractionDigits = 0; maximumFractionDigits = dec }
     return nf.format(q)
+}
+
+/** Trois cartes compactes « Top 3 jour / semaine / mois » (nom sur 2 lignes, petite police). */
+@Composable
+fun Top3Cartes(
+    groupes: List<Pair<String, List<Triple<String, Double, fr.eq.patrimo.data.Position>>>>,
+    ouvrir: (fr.eq.patrimo.data.Position) -> Unit
+) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        groupes.forEach { (titre, valeurs) ->
+            val top = valeurs.sortedByDescending { it.second }.take(3)
+            Column(Modifier.weight(1f).background(C.Carte, RoundedCornerShape(12.dp)).padding(horizontal = 7.dp, vertical = 6.dp)) {
+                Text("Top 3 $titre", color = C.Or, fontWeight = FontWeight.Bold, fontSize = 10.5.sp)
+                if (top.isEmpty()) Text("—", color = C.Discret, fontSize = 10.sp)
+                top.forEachIndexed { rang, (nom, v, pos) ->
+                    Row(Modifier.padding(top = 4.dp).clickable { ouvrir(pos) }, verticalAlignment = Alignment.Top) {
+                        Text("${rang + 1}. $nom", fontSize = 9.5.sp, lineHeight = 11.sp, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f))
+                        Text(" " + Portfolio.pct(v).replace(" ", ""), color = C.signe(v), fontSize = 10.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** Fine ligne pointillée de séparation. */
+@Composable
+fun Pointilles(modifier: Modifier = Modifier) {
+    androidx.compose.foundation.Canvas(modifier.fillMaxWidth().height(1.dp)) {
+        drawLine(C.Discret.copy(alpha = .6f), androidx.compose.ui.geometry.Offset(0f, 0f), androidx.compose.ui.geometry.Offset(size.width, 0f),
+            strokeWidth = 1.dp.toPx(), pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(8f, 6f)))
+    }
+}
+
+/** Montant compact signé : +523 €, +5,2 k€, −1,3 M€. */
+fun eurCompact(x: Double): String {
+    val a = kotlin.math.abs(x); val s = if (x >= 0) "+" else "−"
+    return when {
+        a >= 1_000_000 -> s + String.format(Locale.FRANCE, "%.1f", a / 1_000_000) + " M€"
+        a >= 10_000 -> s + String.format(Locale.FRANCE, "%.0f", a / 1_000) + " k€"
+        a >= 1_000 -> s + String.format(Locale.FRANCE, "%.1f", a / 1_000) + " k€"
+        else -> s + String.format(Locale.FRANCE, "%.0f", a) + " €"
+    }
 }
