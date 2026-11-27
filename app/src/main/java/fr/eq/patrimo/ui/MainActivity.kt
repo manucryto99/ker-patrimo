@@ -82,6 +82,9 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.withStyle
@@ -631,20 +634,68 @@ fun Vide() {
     }
 }
 
-/** Page d'accueil plein écran (bandeau en portrait) : disparaît au toucher ou après 2,5 s. */
+/** Code d'accès de la page d'accueil (provisoire, en dur). */
+private const val CODE_ACCES = "5522"
+
+/** Page d'accueil plein écran (bandeau en portrait) : apparaît avec un flou progressif, ne s'ouvre qu'avec le code. */
 @Composable
 fun PageAccueil(montrer: Boolean) {
     var visible by rememberSaveable { mutableStateOf(montrer) }
-    LaunchedEffect(Unit) { kotlinx.coroutines.delay(2500); visible = false }
+    var saisie by rememberSaveable { mutableStateOf("") }
+    var erreur by remember { mutableStateOf(false) }
+    // Apparition : l'image passe de floue et transparente à nette
+    val apparition = remember { androidx.compose.animation.core.Animatable(0f) }
+    LaunchedEffect(Unit) { apparition.animateTo(1f, androidx.compose.animation.core.tween(1600, easing = androidx.compose.animation.core.FastOutSlowInEasing)) }
+    val secousse = remember { androidx.compose.animation.core.Animatable(0f) }
+    LaunchedEffect(erreur) {
+        if (erreur) {
+            repeat(3) { secousse.animateTo(14f, androidx.compose.animation.core.tween(45)); secousse.animateTo(-14f, androidx.compose.animation.core.tween(45)) }
+            secousse.animateTo(0f, androidx.compose.animation.core.tween(45))
+            saisie = ""
+        }
+    }
+    fun taper(ch: String) {
+        if (saisie.length >= 4) return
+        erreur = false
+        saisie += ch
+        if (saisie.length == 4) { if (saisie == CODE_ACCES) visible = false else erreur = true }
+    }
     androidx.compose.animation.AnimatedVisibility(
         visible = visible,
-        enter = androidx.compose.animation.fadeIn(),
+        enter = androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(0)),
         exit = androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(500)) +
             androidx.compose.animation.scaleOut(targetScale = 1.06f, animationSpec = androidx.compose.animation.core.tween(500))
     ) {
+        val t = apparition.value
         Box(Modifier.fillMaxSize().background(C.Fond).clickable(
-            interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, indication = null) { visible = false }) {
-            Image(painterResource(R.drawable.accueil_ker), contentDescription = "Ker Patrimo", contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+            interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, indication = null) { }) {
+            Image(painterResource(R.drawable.accueil_ker), contentDescription = "Ker Patrimo", contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
+                    .graphicsLayer { alpha = t; scaleX = 1.08f - 0.08f * t; scaleY = 1.08f - 0.08f * t }
+                    .blur(((1f - t) * 28f).dp))
+            // Clavier du code
+            Column(Modifier.align(Alignment.BottomCenter).padding(bottom = 36.dp).graphicsLayer { alpha = ((t - 0.5f) * 2f).coerceIn(0f, 1f) }
+                .background(Color(0xCC0D0F14), RoundedCornerShape(24.dp)).padding(horizontal = 22.dp, vertical = 16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(if (erreur) "Code incorrect" else "Entrez votre code", color = if (erreur) C.Baisse else C.Texte, fontSize = 14.sp)
+                Row(Modifier.padding(vertical = 12.dp).graphicsLayer { translationX = secousse.value }, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                    repeat(4) { i ->
+                        Box(Modifier.size(14.dp).border(1.5.dp, C.Or, CircleShape).background(if (i < saisie.length) C.Or else Color.Transparent, CircleShape))
+                    }
+                }
+                listOf(listOf("1", "2", "3"), listOf("4", "5", "6"), listOf("7", "8", "9"), listOf("", "0", "⌫")).forEach { rangee ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(18.dp), modifier = Modifier.padding(vertical = 5.dp)) {
+                        rangee.forEach { k ->
+                            Box(Modifier.size(62.dp).clip(CircleShape)
+                                .background(if (k.isEmpty()) Color.Transparent else Color(0x22FFFFFF))
+                                .clickable(enabled = k.isNotEmpty()) { if (k == "⌫") { saisie = saisie.dropLast(1); erreur = false } else taper(k) },
+                                contentAlignment = Alignment.Center) {
+                                Text(k, color = C.Texte, fontSize = 24.sp, fontWeight = FontWeight.Medium)
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }
