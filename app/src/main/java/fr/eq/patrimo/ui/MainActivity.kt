@@ -138,6 +138,12 @@ fun App(vm: PortfolioViewModel) {
             Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp, top = 12.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("Ker ", fontFamily = FontFamily.Serif, fontStyle = FontStyle.Italic, fontSize = 20.sp, color = C.Or)
                 Text("Patrimo", fontWeight = FontWeight.Bold, fontSize = 19.sp)
+                // Médaillon doré de l'enfant, à côté du nom
+                Box(Modifier.padding(start = 10.dp).size(38.dp)
+                    .background(androidx.compose.ui.graphics.Brush.linearGradient(listOf(Color(0xFFF3DFA6), Color(0xFFB8913F))), CircleShape)
+                    .padding(2.5.dp).clip(CircleShape)) {
+                    Image(painterResource(R.drawable.medaillon_enfant), contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+                }
                 Spacer(Modifier.weight(1f))
                 if (busy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = C.Or)
                 IconButton(onClick = { vm.refresh() }) { Icon(Icons.Default.Refresh, "Actualiser les cours") }
