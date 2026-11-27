@@ -82,6 +82,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.layout.requiredHeight
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.draw.blur
@@ -654,11 +656,12 @@ fun PageAccueil(montrer: Boolean) {
             saisie = ""
         }
     }
+    var clavierCache by remember { mutableStateOf<androidx.compose.ui.platform.SoftwareKeyboardController?>(null) }
     fun taper(ch: String) {
         if (saisie.length >= 4) return
         erreur = false
         saisie += ch
-        if (saisie.length == 4) { if (saisie == CODE_ACCES) visible = false else erreur = true }
+        if (saisie.length == 4) { if (saisie == CODE_ACCES) { visible = false; clavierCache?.hide() } else erreur = true }
     }
     androidx.compose.animation.AnimatedVisibility(
         visible = visible,
@@ -667,31 +670,36 @@ fun PageAccueil(montrer: Boolean) {
             androidx.compose.animation.scaleOut(targetScale = 1.06f, animationSpec = androidx.compose.animation.core.tween(500))
     ) {
         val t = apparition.value
+        // Hauteur d'écran fixe : l'ouverture du clavier ne doit ni recadrer l'image ni déplacer les cases
+        val hEcran = androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp.dp
         Box(Modifier.fillMaxSize().background(C.Fond).clickable(
             interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, indication = null) { }) {
             Image(painterResource(R.drawable.accueil_ker), contentDescription = "Ker Patrimo", contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize()
+                modifier = Modifier.fillMaxWidth().requiredHeight(hEcran).align(Alignment.TopCenter)
                     .graphicsLayer { alpha = t; scaleX = 1.08f - 0.08f * t; scaleY = 1.08f - 0.08f * t }
                     .blur(((1f - t) * 28f).dp))
-            // Clavier du code
-            Column(Modifier.align(Alignment.BottomCenter).padding(bottom = 36.dp).graphicsLayer { alpha = ((t - 0.5f) * 2f).coerceIn(0f, 1f) }
-                .background(Color(0xCC0D0F14), RoundedCornerShape(24.dp)).padding(horizontal = 22.dp, vertical = 16.dp),
-                horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(if (erreur) "Code incorrect" else "Entrez votre code", color = if (erreur) C.Baisse else C.Texte, fontSize = 14.sp)
-                Row(Modifier.padding(vertical = 12.dp).graphicsLayer { translationX = secousse.value }, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            // Les 4 cases du code, juste sous le titre, sans texte : le clavier numérique du téléphone sert à la saisie
+            val focus = remember { androidx.compose.ui.focus.FocusRequester() }
+            val clavier = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+            clavierCache = clavier
+            LaunchedEffect(Unit) { kotlinx.coroutines.delay(900); runCatching { focus.requestFocus(); clavier?.show() } }
+            Box(Modifier.fillMaxSize()) {
+                androidx.compose.foundation.text.BasicTextField(
+                    value = saisie,
+                    onValueChange = { v -> val c = v.filter { it.isDigit() }.take(4); if (c.length < saisie.length) { saisie = c; erreur = false } else c.drop(saisie.length).forEach { taper(it.toString()) } },
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.NumberPassword),
+                    modifier = Modifier.size(1.dp).graphicsLayer { alpha = 0f }.focusRequester(focus)
+                )
+                Row(Modifier.align(Alignment.TopCenter).padding(top = hEcran * 0.285f)
+                    .graphicsLayer { alpha = ((t - 0.5f) * 2f).coerceIn(0f, 1f); translationX = secousse.value }
+                    .clickable(interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, indication = null) {
+                        runCatching { focus.requestFocus(); clavier?.show() } },
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     repeat(4) { i ->
-                        Box(Modifier.size(14.dp).border(1.5.dp, C.Or, CircleShape).background(if (i < saisie.length) C.Or else Color.Transparent, CircleShape))
-                    }
-                }
-                listOf(listOf("1", "2", "3"), listOf("4", "5", "6"), listOf("7", "8", "9"), listOf("", "0", "⌫")).forEach { rangee ->
-                    Row(horizontalArrangement = Arrangement.spacedBy(18.dp), modifier = Modifier.padding(vertical = 5.dp)) {
-                        rangee.forEach { k ->
-                            Box(Modifier.size(62.dp).clip(CircleShape)
-                                .background(if (k.isEmpty()) Color.Transparent else Color(0x22FFFFFF))
-                                .clickable(enabled = k.isNotEmpty()) { if (k == "⌫") { saisie = saisie.dropLast(1); erreur = false } else taper(k) },
-                                contentAlignment = Alignment.Center) {
-                                Text(k, color = C.Texte, fontSize = 24.sp, fontWeight = FontWeight.Medium)
-                            }
+                        Box(Modifier.size(46.dp).background(Color(0x990D0F14), RoundedCornerShape(10.dp))
+                            .border(1.5.dp, if (erreur) C.Baisse else C.Or.copy(alpha = if (i == saisie.length) 1f else .6f), RoundedCornerShape(10.dp)),
+                            contentAlignment = Alignment.Center) {
+                            if (i < saisie.length) Box(Modifier.size(12.dp).background(C.Or, CircleShape))
                         }
                     }
                 }
