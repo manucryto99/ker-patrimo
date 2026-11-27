@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -105,7 +106,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         RefreshWorker.planifier(this)
-        setContent { PatrimoTheme { App(vm) } }
+        setContent { PatrimoTheme { Box(Modifier.fillMaxSize()) { App(vm); PageAccueil(montrer = savedInstanceState == null) } } }
     }
 }
 
@@ -181,13 +182,6 @@ fun Accueil(vm: PortfolioViewModel) {
     val lignes = lignesCat.filter { comptes.isEmpty() || it.p.contrat in comptes }
     val total = lignes.sumOf { it.valeur }
     Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
-        // Bandeau : le domaine, hier et aujourd'hui
-        Image(
-            painter = painterResource(R.drawable.bandeau_ker),
-            contentDescription = "Ker Patrimo : château, photos de famille et livres anciens",
-            contentScale = ContentScale.Crop,
-            modifier = Modifier.padding(top = 8.dp).fillMaxWidth().aspectRatio(1500f / 420f).clip(RoundedCornerShape(16.dp))
-        )
         MenuCategories(vm, toutes)
         Text(when {
             categorie == null -> "Patrimoine financier"
@@ -266,8 +260,31 @@ fun Accueil(vm: PortfolioViewModel) {
             Text("Gains affichés nets de ces trois frais.", color = C.Discret, fontSize = 11.sp, modifier = Modifier.padding(top = 6.dp))
         }
         val tri = lignes.filter { it.estCote }.sortedByDescending { it.perf }
+        // Plus et moins-values par portefeuille (dès que plusieurs contrats sont affichés)
+        val parContrat = lignes.groupBy { it.p.contrat }.map { (c, l) -> c to l.sumOf { it.gain } }.sortedByDescending { it.second }
+        if (parContrat.size > 1) Carte(titre = "Plus et moins-values par portefeuille") {
+            val maxAbs = parContrat.maxOf { kotlin.math.abs(it.second) }.takeIf { it > 0 } ?: 1.0
+            parContrat.forEach { (c, g) ->
+                Row(Modifier.fillMaxWidth().padding(vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(c, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(0.9f))
+                    // barre divergente : pertes à gauche de l'axe, gains à droite
+                    Row(Modifier.weight(1.6f).height(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                        val f = (kotlin.math.abs(g) / maxAbs).toFloat().coerceIn(0.02f, 1f)
+                        Box(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.CenterEnd) {
+                            if (g < 0) Box(Modifier.fillMaxWidth(f).fillMaxHeight().background(C.Baisse, RoundedCornerShape(topStart = 4.dp, bottomStart = 4.dp)))
+                        }
+                        Box(Modifier.width(1.dp).fillMaxHeight().background(C.Discret))
+                        Box(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.CenterStart) {
+                            if (g >= 0) Box(Modifier.fillMaxWidth(f).fillMaxHeight().background(C.Hausse, RoundedCornerShape(topEnd = 4.dp, bottomEnd = 4.dp)))
+                        }
+                    }
+                    Text(Portfolio.signe(g), color = C.signe(g), fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1,
+                        textAlign = TextAlign.End, modifier = Modifier.weight(0.9f))
+                }
+            }
+        }
         if (tri.isNotEmpty()) Carte(titre = "Meilleures et pires lignes") {
-            (tri.take(2) + tri.takeLast(2)).distinct().forEach { LigneResume(it) }
+            (tri.take(2) + tri.takeLast(2)).distinct().forEach { LigneResume(it, vars[it.p.id]) }
         }
     }
 }
@@ -284,8 +301,9 @@ fun LigneFrais(titre: String, montant: Double, detail: String) {
 }
 
 @Composable
-fun LigneResume(l: Ligne) {
-    Row(Modifier.fillMaxWidth().padding(vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
+fun LigneResume(l: Ligne, v: fr.eq.patrimo.domain.Variations? = null) {
+    Column(Modifier.fillMaxWidth().padding(vertical = 7.dp)) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.size(38.dp).background(C.Carte2, RoundedCornerShape(12.dp)), contentAlignment = Alignment.Center) {
             Text(l.p.libelle.take(2).uppercase(), color = C.Or, fontWeight = FontWeight.Bold, fontSize = 12.sp)
         }
@@ -295,8 +313,11 @@ fun LigneResume(l: Ligne) {
         }
         Column(horizontalAlignment = Alignment.End) {
             Text(Portfolio.eur(l.valeur), fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-            Text(Portfolio.pct(l.perf), color = C.signe(l.gain), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+            // gain cumulé depuis l'achat, en € et en %
+            Text(Portfolio.signe(l.gain) + "  " + Portfolio.pct(l.perf), color = C.signe(l.gain), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
         }
+    }
+    if (v != null) VariationsLigne(v, avec5ans = true)
     }
 }
 
@@ -423,9 +444,9 @@ fun Placements(vm: PortfolioViewModel) {
 
 /** « J +0,4% · 1S −1,2% · 1M +3,1% · 3M · 6M · 1A » sur une ligne, pleine largeur, sous le titre. */
 @Composable
-private fun VariationsLigne(v: fr.eq.patrimo.domain.Variations) {
+private fun VariationsLigne(v: fr.eq.patrimo.domain.Variations, avec5ans: Boolean = false) {
     Row(Modifier.fillMaxWidth().padding(top = 3.dp)) {
-        v.toutes.forEach { (lab, x) ->
+        (if (avec5ans) v.avec5ans else v.toutes).forEach { (lab, x) ->
             Text(buildAnnotatedString {
                 withStyle(SpanStyle(color = C.Discret)) { append("$lab ") }
                 withStyle(SpanStyle(color = if (x == null) C.Discret else C.signe(x), fontWeight = FontWeight.SemiBold)) {
@@ -607,5 +628,23 @@ fun Vide() {
     Column(Modifier.fillMaxSize().padding(32.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
         Text("Aucun placement", fontWeight = FontWeight.SemiBold, fontSize = 18.sp)
         Text("Touchez « Importer » et choisissez votre classeur de suivi (.xlsm, onglet « portefeuille ») ou le modèle Ker Patrimo (.xlsx).", color = C.Discret, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 8.dp))
+    }
+}
+
+/** Page d'accueil plein écran (bandeau en portrait) : disparaît au toucher ou après 2,5 s. */
+@Composable
+fun PageAccueil(montrer: Boolean) {
+    var visible by rememberSaveable { mutableStateOf(montrer) }
+    LaunchedEffect(Unit) { kotlinx.coroutines.delay(2500); visible = false }
+    androidx.compose.animation.AnimatedVisibility(
+        visible = visible,
+        enter = androidx.compose.animation.fadeIn(),
+        exit = androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(500)) +
+            androidx.compose.animation.scaleOut(targetScale = 1.06f, animationSpec = androidx.compose.animation.core.tween(500))
+    ) {
+        Box(Modifier.fillMaxSize().background(C.Fond).clickable(
+            interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, indication = null) { visible = false }) {
+            Image(painterResource(R.drawable.accueil_ker), contentDescription = "Ker Patrimo", contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+        }
     }
 }
