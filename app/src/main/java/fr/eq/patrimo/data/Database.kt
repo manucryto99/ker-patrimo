@@ -174,6 +174,9 @@ abstract class PortfolioDao {
     @androidx.room.Insert(onConflict = androidx.room.OnConflictStrategy.REPLACE)
     abstract suspend fun upsertHistorique(items: List<PointHistorique>)
 
+    @Query("SELECT * FROM historique WHERE epochDay >= :depuis")
+    abstract suspend fun historiqueDepuis(depuis: Long): List<PointHistorique>
+
     @Query("DELETE FROM historique WHERE source != 'auto'")
     abstract suspend fun viderHistoriqueImporte()
 

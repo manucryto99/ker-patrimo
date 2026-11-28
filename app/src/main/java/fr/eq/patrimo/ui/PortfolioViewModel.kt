@@ -268,6 +268,11 @@ class PortfolioViewModel(app: Application, val base: String = "patrimo.db") : An
     private val _chat = MutableStateFlow(listOf(Message("assistant", "Bonjour ! Posez-moi une question sur vos placements.")))
     val chat = _chat.asStateFlow()
 
+    private val _cloud = MutableStateFlow(fr.eq.patrimo.cloud.CloudSync.config(app))
+    val cloud = _cloud.asStateFlow()
+    private val _synchroEnCours = MutableStateFlow(false)
+    val synchroEnCours = _synchroEnCours.asStateFlow()
+
     init {
         // Enveloppes d'épargne retraite / salariale : contrats créés s'ils n'existent pas (frais modifiables dans les Réglages)
         versesConnus()
@@ -280,9 +285,47 @@ class PortfolioViewModel(app: Application, val base: String = "patrimo.db") : An
             val manquants = voulus.filter { (it.etablissement to it.contrat) !in existants }
             if (manquants.isNotEmpty()) dao.insertContrats(manquants)
         }
+        // Cloud : note les modifications faites dans l'appli, synchronise à l'ouverture
+        viewModelScope.launch {
+            kotlinx.coroutines.flow.combine(dao.observePositions(), dao.observeContrats()) { p, c -> p to c }
+                .collect { (p, c) -> fr.eq.patrimo.cloud.CloudSync.noterModif(getApplication(), base, p, c) }
+        }
+        synchroniser(silencieux = true)
         refresh(silencieux = true)
         // Rafraîchissement automatique tant que l'appli est ouverte (cours différés ~15 min selon la place)
-        viewModelScope.launch { while (true) { delay(5 * 60_000L); refresh(silencieux = true) } }
+        viewModelScope.launch { var n = 0; while (true) { delay(5 * 60_000L); refresh(silencieux = true); if (++n % 12 == 0) synchroniser(silencieux = true) } }
+    }
+
+    fun synchroniser(silencieux: Boolean = false) {
+        val ctx = getApplication<Application>()
+        if (!fr.eq.patrimo.cloud.CloudSync.estConfigure(ctx) || _synchroEnCours.value) return
+        viewModelScope.launch {
+            _synchroEnCours.value = true
+            val r = fr.eq.patrimo.cloud.CloudSync.synchroniserTout(ctx)
+            _synchroEnCours.value = false
+            _cloud.value = fr.eq.patrimo.cloud.CloudSync.config(ctx)
+            if (!silencieux || r.isFailure) _info.value = r.fold({ it }, { "Cloud : ${it.message}" })
+        }
+    }
+
+    fun connecterCloud(url: String, cle: String, email: String, mdp: String) {
+        val ctx = getApplication<Application>()
+        viewModelScope.launch {
+            val r = fr.eq.patrimo.cloud.CloudSync.connecter(ctx, url, cle, email, mdp)
+            _cloud.value = fr.eq.patrimo.cloud.CloudSync.config(ctx)
+            _info.value = r.fold({ it }, { "Connexion impossible : ${it.message}" })
+            if (r.isSuccess) synchroniser()
+        }
+    }
+
+    fun deconnecterCloud() {
+        fr.eq.patrimo.cloud.CloudSync.deconnecter(getApplication())
+        _cloud.value = fr.eq.patrimo.cloud.CloudSync.config(getApplication())
+    }
+
+    private fun historiqueChange(vider: Boolean = false) {
+        fr.eq.patrimo.cloud.CloudSync.historiqueModifie(getApplication(), base, vider)
+        synchroniser(silencieux = true)
     }
 
     fun setPeriode(p: Periode) { _periode.value = p }
@@ -298,7 +341,7 @@ class PortfolioViewModel(app: Application, val base: String = "patrimo.db") : An
             // Une fois : rechargement complet sur 5 ans pour remplacer les anciens historiques mal mis à l'échelle
             val complet = sansHistorique || !prefs.getBoolean("histo5ans_v26_$base", false)
             val recharger = complet || System.currentTimeMillis() - prefs.getLong("histo2_$base", 0) > 12 * 3_600_000L
-            val r = quotes.refreshAll(withHistory = recharger, range = if (complet) "5y" else "3mo")
+            val r = fr.eq.patrimo.cloud.CloudSync.sansModif(getApplication(), base) { quotes.refreshAll(withHistory = recharger, range = if (complet) "5y" else "3mo") }
             if (recharger && r.ok > 0) prefs.edit().putLong("histo2_$base", System.currentTimeMillis()).putBoolean("histo5ans_v26_$base", true).apply()
             historyVersion.update { it + 1 }
             _busy.value = false
@@ -330,6 +373,7 @@ class PortfolioViewModel(app: Application, val base: String = "patrimo.db") : An
                 }
             }
             _progression.value = null; _busy.value = false
+            if (res.isSuccess) historiqueChange()
             _bilan.value = res.fold({ (pts, n) ->
                 if (pts.isEmpty()) "Aucune valeur trouvée.\n\nLe fichier doit avoir une colonne « Date », puis soit les colonnes « Portefeuille » et « Valeur », soit une colonne par portefeuille."
                 else {
@@ -382,11 +426,12 @@ class PortfolioViewModel(app: Application, val base: String = "patrimo.db") : An
                     "\n\nHypothèse : nombre de parts actuel depuis la date d'achat (pas d'achats ou ventes intermédiaires). Fonds euros et lignes sans cotation non reconstitués."
             }
             _progression.value = null; _busy.value = false
+            historiqueChange()
             _bilan.value = msg
         }
     }
 
-    fun viderHistoriqueImporte() { viewModelScope.launch { dao.viderHistoriqueImporte(); _info.value = "Historique importé effacé (relevés automatiques conservés)" } }
+    fun viderHistoriqueImporte() { viewModelScope.launch { dao.viderHistoriqueImporte(); historiqueChange(vider = true); _info.value = "Historique importé effacé (relevés automatiques conservés)" } }
 
     /** Montants versés communiqués par l'utilisateur (une seule fois ; modifiables ensuite dans les Réglages). */
     private fun versesConnus() = viewModelScope.launch {

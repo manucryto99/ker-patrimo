@@ -13,6 +13,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -72,7 +76,7 @@ fun ReglagesEcran(vm: PortfolioViewModel, snack: SnackbarHostState, fermer: () -
     ) { pad ->
         Column(Modifier.padding(pad).fillMaxSize().imePadding()) {
             Row(Modifier.padding(horizontal = 16.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                listOf("Frais des contrats", "Frais des fonds", "Journal des parts", "Assistant").forEachIndexed { i, t ->
+                listOf("Frais des contrats", "Frais des fonds", "Journal des parts", "Assistant", "Cloud").forEachIndexed { i, t ->
                     FilterChip(selected = section == i, onClick = { section = i }, label = { Text(t) })
                 }
             }
@@ -91,7 +95,8 @@ fun ReglagesEcran(vm: PortfolioViewModel, snack: SnackbarHostState, fermer: () -
                         else item { JournalLignes(j.take(150), avecLibelle = true) }
                     }
                 }
-                else -> ReglagesAssistant(vm)
+                3 -> ReglagesAssistant(vm)
+                else -> ReglagesCloud(vm)
             }
         }
     }
@@ -217,5 +222,43 @@ private fun ReglagesAssistant(vm: PortfolioViewModel) {
         OutlinedTextField(cle, { cle = it }, label = { Text("Clé d'API") }, singleLine = true, modifier = Modifier.fillMaxWidth())
         OutlinedTextField(modele, { modele = it }, label = { Text("Modèle") }, singleLine = true, modifier = Modifier.fillMaxWidth())
         Button(onClick = { s.baseUrl = url; s.apiKey = cle; s.model = modele }, shape = RoundedCornerShape(12.dp)) { Text("Enregistrer") }
+    }
+}
+
+
+@Composable
+private fun ReglagesCloud(vm: PortfolioViewModel) {
+    val c by vm.cloud.collectAsStateWithLifecycle()
+    val enCours by vm.synchroEnCours.collectAsStateWithLifecycle()
+    var url by remember(c.url) { mutableStateOf(c.url) }
+    var cle by remember(c.cle) { mutableStateOf(c.cle) }
+    var email by remember(c.email) { mutableStateOf(c.email) }
+    var mdp by remember { mutableStateOf("") }
+    Column(Modifier.padding(16.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("Synchronise les trois patrimoines (positions, contrats et historique) avec ton projet Supabase « ker-patrimo ». " +
+            "Tous les téléphones connectés avec un compte autorisé voient les mêmes données. Synchro à l'ouverture, toutes les heures et après chaque import.",
+            color = C.Discret, fontSize = 13.sp)
+        if (c.connecte) {
+            Text("Connecté : ${c.email}", fontWeight = FontWeight.SemiBold, color = C.Hausse)
+            val f = java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm")
+            Text(if (c.derniereSync > 0) "Dernière synchro : " + java.time.Instant.ofEpochMilli(c.derniereSync)
+                .atZone(java.time.ZoneId.systemDefault()).format(f) else "Pas encore synchronisé", fontSize = 13.sp)
+            if (c.message.isNotBlank()) Text(c.message, fontSize = 12.sp, color = if (c.message.startsWith("Échec")) C.Baisse else C.Discret)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Button(onClick = { vm.synchroniser() }, enabled = !enCours, shape = RoundedCornerShape(12.dp)) { Text("Synchroniser maintenant") }
+                if (enCours) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
+            }
+            OutlinedButton(onClick = { vm.deconnecterCloud() }, shape = RoundedCornerShape(12.dp)) { Text("Se déconnecter") }
+        } else {
+            OutlinedTextField(url, { url = it }, label = { Text("URL du projet (https://xxxx.supabase.co)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(cle, { cle = it }, label = { Text("Clé publique (publishable / anon)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            Text("Jamais la clé « secret » ou « service_role ».", color = C.Or, fontSize = 12.sp)
+            OutlinedTextField(email, { email = it }, label = { Text("E-mail du compte") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(mdp, { mdp = it }, label = { Text("Mot de passe") }, singleLine = true,
+                visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth())
+            Button(onClick = { vm.connecterCloud(url, cle, email, mdp); mdp = "" },
+                enabled = url.isNotBlank() && cle.isNotBlank() && email.isNotBlank() && mdp.isNotBlank(), shape = RoundedCornerShape(12.dp)) { Text("Se connecter") }
+            if (c.message.isNotBlank()) Text(c.message, fontSize = 12.sp, color = C.Discret)
+        }
     }
 }

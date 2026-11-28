@@ -26,16 +26,20 @@ import java.util.concurrent.TimeUnit
 class RefreshWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx, params) {
 
     override suspend fun doWork(): Result {
+        val cloud = fr.eq.patrimo.cloud.CloudSync
+        // D'abord recevoir les modifications faites sur un autre téléphone, puis rafraîchir, puis envoyer
+        if (cloud.estConfigure(applicationContext)) cloud.synchroniserTout(applicationContext)
         // Tous les patrimoines existants (Emmanuel, Natalia, Estelle)
         val insights = listOf("patrimo.db", "patrimo_natalia.db", "patrimo_estelle.db")
             .filter { it == "patrimo.db" || applicationContext.getDatabasePath(it).exists() }
             .flatMap { nom ->
                 val dao = AppDatabase.get(applicationContext, nom).dao()
-                QuoteService(dao).refreshAll(withHistory = false)
+                cloud.sansModif(applicationContext, nom) { QuoteService(dao).refreshAll(withHistory = false) }
                 InsightEngine.analyse(Portfolio.lignes(dao.positions().filter { !it.aSurveiller }, dao.contrats()))
                     .filter { it.niveau == Niveau.ALERTE || it.niveau == Niveau.POSITIF }
                     .map { i -> if (nom == "patrimo.db") i else i.copy(cle = nom + ":" + i.cle) }
             }
+        if (cloud.estConfigure(applicationContext)) cloud.synchroniserTout(applicationContext)
         val prefs = applicationContext.getSharedPreferences("alertes", Context.MODE_PRIVATE)
         val deja = prefs.getStringSet("notifiees", emptySet())!!
         val nouvelles = insights.filter { it.cle !in deja }
