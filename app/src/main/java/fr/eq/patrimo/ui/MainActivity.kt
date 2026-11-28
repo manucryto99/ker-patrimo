@@ -441,6 +441,7 @@ fun DetailTitres(vm: PortfolioViewModel, lignes: List<Ligne>, vars: Map<Long, fr
     var fiche by remember { mutableStateOf<Position?>(null) }
     var nouvelle by remember { mutableStateOf(false) }
     val journalParts by vm.journalParts.collectAsStateWithLifecycle()
+    val eurUsd by vm.eurUsd.collectAsStateWithLifecycle()
     if (fiche != null || nouvelle) FicheLigne(fiche, contrats, false, vm::enregistrerPosition, vm::supprimerPosition, vm::appliquer,
         journal = journalParts.filter { it.positionId == fiche?.id }) { fiche = null; nouvelle = false }
     if (lignes.isEmpty()) return
@@ -481,7 +482,11 @@ fun DetailTitres(vm: PortfolioViewModel, lignes: List<Ligne>, vars: Map<Long, fr
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Text(l.p.libelle, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f, fill = false))
-                    if (l.p.quantite > 0) Text(" (${formatParts(l.parts, l.p.type)} ${if (l.parts > 1) "parts" else "part"})",
+                    // Crypto : cours unitaire en dollars à côté du nombre d'unités
+                    val coursUsd = if (l.p.enveloppe.equals("Crypto", true)) eurUsd?.let { r -> (l.p.dernierCours ?: l.p.pru) * r } else null
+                    if (l.p.quantite > 0) Text(" (${formatParts(l.parts, l.p.type)} ${if (l.parts > 1) "parts" else "part"}" +
+                        (coursUsd?.let { " · " + java.text.NumberFormat.getNumberInstance(Locale.FRANCE).apply {
+                            maximumFractionDigits = if (it >= 100) 0 else if (it >= 1) 2 else 6 }.format(it) + " $" } ?: "") + ")",
                         fontSize = 12.sp, color = C.Parts, fontWeight = FontWeight.Medium, maxLines = 1)
                 }
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {

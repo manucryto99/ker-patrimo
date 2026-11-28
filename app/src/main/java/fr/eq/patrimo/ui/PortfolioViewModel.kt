@@ -522,6 +522,11 @@ class PortfolioViewModel(app: Application, val base: String = "patrimo.db") : An
         if (j.isNotEmpty()) dao.insertJournal(j)
     }
 
+    /** Taux EUR → USD (pour afficher le cours des cryptos en dollars), rafraîchi avec les cours. */
+    val eurUsd: StateFlow<Double?> = historyVersion.mapLatest {
+        withContext(Dispatchers.IO) { runCatching { yahoo.eurRate("USD") }.getOrNull()?.takeIf { it in 0.5..2.0 } }
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
     /** Journal des ajustements de parts (300 derniers). */
     val journalParts = dao.observeJournal().stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
