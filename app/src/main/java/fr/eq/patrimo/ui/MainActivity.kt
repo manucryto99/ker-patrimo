@@ -309,8 +309,17 @@ fun Accueil(vm: PortfolioViewModel) {
         }
         val tri = lignes.filter { it.estCote }.sortedByDescending { it.perf }
         // Plus et moins-values par portefeuille (dès que plusieurs contrats sont affichés)
-        val parContrat = lignes.groupBy { it.p.contrat }.map { (c, l) -> c to l.sumOf { it.gain } }.sortedByDescending { it.second }
-        if (parContrat.size > 1) Carte(titre = "Plus et moins-values par portefeuille") {
+        // Tout : par catégorie (Assurance vie, PEA…) ; une catégorie : par contrat de cette catégorie
+        val parContrat = lignes.groupBy { if (categorie == null) it.p.enveloppe else it.p.contrat }
+            .map { (c, l) -> c to l.sumOf { it.gain } }.sortedByDescending { it.second }
+        var pmvOuvert by rememberSaveable { mutableStateOf(false) }
+        if (parContrat.size > 1) Column(Modifier.fillMaxWidth().padding(top = 12.dp).background(C.Carte, RoundedCornerShape(16.dp)).padding(horizontal = 12.dp, vertical = 4.dp)) {
+            Row(Modifier.fillMaxWidth().clickable { pmvOuvert = !pmvOuvert }.padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(if (pmvOuvert) "▾" else "▸", color = C.Or, fontSize = 16.sp)
+                Text("  Plus et moins-values par catégorie", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, modifier = Modifier.weight(1f))
+                Text(if (categorie == null) "catégories" else "contrats", color = C.Discret, fontSize = 11.sp)
+            }
+            if (!pmvOuvert) return@Column
             val maxAbs = parContrat.maxOf { kotlin.math.abs(it.second) }.takeIf { it > 0 } ?: 1.0
             parContrat.forEach { (c, g) ->
                 Row(Modifier.fillMaxWidth().padding(vertical = 1.5.dp), verticalAlignment = Alignment.CenterVertically) {
