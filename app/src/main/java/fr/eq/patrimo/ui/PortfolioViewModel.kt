@@ -110,13 +110,16 @@ class PortfolioViewModel(app: Application) : AndroidViewModel(app) {
         Portfolio.courbeGlissante(l, seriesIntraday(l, p), seriesQuotidiennes(), maintenant - p.secondes, maintenant)
     }
 
-    /** Variation sur 24 h glissantes de chaque ligne : même calcul que la courbe 1J. */
-    private suspend fun jour24(l: List<Ligne>): Map<Long, Double?> {
+    /** Variations glissantes de chaque ligne sur 1 h, 24 h et 3 jours : même calcul que les courbes 1H / 1J. */
+    private suspend fun glissantes(l: List<Ligne>): Map<Long, Triple<Double?, Double?, Double?>> {
         val maintenant = System.currentTimeMillis() / 1000
-        val intraday = seriesIntraday(l, Periode.J1); val quotidien = seriesQuotidiennes()
+        val intraH = seriesIntraday(l, Periode.H1); val intraJ = seriesIntraday(l, Periode.J1); val quotidien = seriesQuotidiennes()
+        fun v(li: Ligne, r: Double) = if (li.estCote && r > 0) 1 / r - 1 else null
         return l.associate { li ->
-            val r = Portfolio.rapportA(li, maintenant - 86_400, intraday, quotidien)
-            li.p.id to (if (li.estCote && r > 0) 1 / r - 1 else null)
+            li.p.id to Triple(
+                v(li, Portfolio.rapportA(li, maintenant - 3_600, intraH, quotidien)),
+                v(li, Portfolio.rapportA(li, maintenant - 86_400, intraJ, quotidien)),
+                v(li, Portfolio.rapportA(li, maintenant - 3 * 86_400, intraJ, quotidien)))
         }
     }
 
@@ -126,7 +129,7 @@ class PortfolioViewModel(app: Application) : AndroidViewModel(app) {
             withContext(Dispatchers.IO) {
                 val auj = LocalDate.now().toEpochDay()
                 val prix = dao.pricesSince(auj - 1835).groupBy { it.isin }.mapValues { (_, v) -> v.sortedBy { it.epochDay } }
-                val j24 = runCatching { jour24(l) }.getOrDefault(emptyMap())
+                val gl = runCatching { glissantes(l) }.getOrDefault(emptyMap())
                 l.filter { it.estCote && it.p.dernierCours != null }.associate { li ->
                     val c = li.p.dernierCours!!
                     val serie = serieFiable(li.p.isin?.let { prix[it] }.orEmpty())
@@ -134,7 +137,8 @@ class PortfolioViewModel(app: Application) : AndroidViewModel(app) {
                     // pas de chiffre si l'historique ne remonte pas assez loin (tolérance 5 jours)
                     fun depuis(n: Long): Double? = if (debut == null || debut > auj - n + 5) null
                         else serie.lastOrNull { it.epochDay <= auj - n }?.close?.takeIf { it > 0 }?.let { c / it - 1 }
-                    li.p.id to fr.eq.patrimo.domain.Variations(j24[li.p.id] ?: li.varJour, depuis(7), depuis(30), depuis(91), depuis(182), depuis(365), depuis(1826))
+                    li.p.id to fr.eq.patrimo.domain.Variations(gl[li.p.id]?.second ?: li.varJour, depuis(7), depuis(30), depuis(91), depuis(182), depuis(365), depuis(1826),
+                        heure = gl[li.p.id]?.first, jours3 = gl[li.p.id]?.third)
                 }
             }
         }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())

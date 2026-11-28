@@ -241,20 +241,16 @@ fun Accueil(vm: PortfolioViewModel) {
         run {
             val (dv, pv) = Portfolio.variation(lignes, vars, horizon)
             Column(Modifier.padding(vertical = 8.dp).fillMaxWidth().background(C.Carte, RoundedCornerShape(16.dp)).padding(14.dp)) {
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     fr.eq.patrimo.domain.Horizon.entries.forEach { h ->
-                        FilterChip(selected = h == horizon, onClick = { vm.setHorizon(h) }, label = { Text(h.label, fontSize = 12.sp) }, modifier = Modifier.height(30.dp))
+                        FilterChip(selected = h == horizon, onClick = { vm.setHorizon(h) }, label = { Text(h.label, fontSize = 12.sp, maxLines = 1) }, modifier = Modifier.height(30.dp))
                     }
                 }
                 Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.Bottom) {
                     Text((if (dv >= 0) "▲ " else "▼ ") + Portfolio.signe(dv), fontSize = 30.sp, fontWeight = FontWeight.Bold, color = C.signe(dv))
                     Text("  " + Portfolio.pct(pv), fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = C.signe(dv), modifier = Modifier.padding(bottom = 3.dp))
                 }
-                Text(when (horizon) {
-                    fr.eq.patrimo.domain.Horizon.JOUR -> "Sur 24 h glissantes"
-                    fr.eq.patrimo.domain.Horizon.SEMAINE -> "Sur 7 jours"
-                    fr.eq.patrimo.domain.Horizon.MOIS -> "Sur 30 jours"
-                } + " · lignes cotées (fonds euros et cash comptés stables)", color = C.Discret, fontSize = 11.sp)
+                Text(horizon.detail + " · lignes cotées (fonds euros et cash comptés stables)", color = C.Discret, fontSize = 11.sp)
             }
         }
         Text("Investi ${Portfolio.eur(investi)} · plus-value ${Portfolio.signe(gain)} (${Portfolio.pct(if (investi > 0) gain / investi else 0.0)})",

@@ -41,8 +41,12 @@ enum class Periode(val label: String, val jours: Long, val secondes: Long = 0) {
 
 /** Variations relatives d'une ligne cotée (null = pas de cours / pas d'historique). */
 data class Variations(val jour: Double?, val semaine: Double?, val mois: Double?,
-                      val mois3: Double? = null, val mois6: Double? = null, val an1: Double? = null, val an5: Double? = null) {
-    fun selon(h: Horizon) = when (h) { Horizon.JOUR -> jour; Horizon.SEMAINE -> semaine; Horizon.MOIS -> mois }
+                      val mois3: Double? = null, val mois6: Double? = null, val an1: Double? = null, val an5: Double? = null,
+                      val heure: Double? = null, val jours3: Double? = null) {
+    fun selon(h: Horizon) = when (h) {
+        Horizon.HEURE -> heure; Horizon.JOUR -> jour; Horizon.JOURS3 -> jours3; Horizon.SEMAINE -> semaine
+        Horizon.MOIS -> mois; Horizon.MOIS3 -> mois3; Horizon.MOIS6 -> mois6
+    }
     /** Les 6 horizons affichés sous chaque titre. */
     val toutes: List<Pair<String, Double?>> get() =
         listOf("J" to jour, "1S" to semaine, "1M" to mois, "3M" to mois3, "6M" to mois6, "1A" to an1)
@@ -59,7 +63,10 @@ data class Perfs(val valeurs: List<Double?>) {
     operator fun get(i: Int) = valeurs[i]
 }
 
-enum class Horizon(val label: String, val court: String) { JOUR("Jour", "J"), SEMAINE("1 semaine", "1S"), MOIS("1 mois", "1M") }
+enum class Horizon(val label: String, val court: String, val detail: String) {
+    HEURE("1 h", "1H", "Sur 1 heure glissante"), JOUR("1 jour", "J", "Sur 24 h glissantes"), JOURS3("3 jours", "3J", "Sur 3 jours glissants"),
+    SEMAINE("1 sem.", "1S", "Sur 7 jours"), MOIS("1 mois", "1M", "Sur 30 jours"), MOIS3("3 mois", "3M", "Sur 3 mois"), MOIS6("6 mois", "6M", "Sur 6 mois")
+}
 
 data class PointCourbe(val epochDay: Long, val valeur: Double, val epochSec: Long? = null)
 
