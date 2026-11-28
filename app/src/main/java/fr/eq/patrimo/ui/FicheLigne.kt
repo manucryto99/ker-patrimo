@@ -65,6 +65,8 @@ fun FicheLigne(
     var taux by remember { mutableStateOf(txt(p0?.tauxAnnuel?.times(100), 3)) }
     var frais by remember { mutableStateOf(txt(p0?.fraisAnnuels?.times(100), 3)) }
     var notes by remember { mutableStateOf(p0?.notes ?: "") }
+    val jjmmaaaa = java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy")
+    var dateAchat by remember { mutableStateOf(p0?.dateAchat?.let { java.time.LocalDate.ofEpochDay(it).format(jjmmaaaa) } ?: "") }
     var dispo by remember { mutableStateOf(p0?.disponibilites ?: "") }
     val ctx = androidx.compose.ui.platform.LocalContext.current
     var surveiller by remember { mutableStateOf(p0?.aSurveiller ?: surveillanceParDefaut) }
@@ -114,6 +116,7 @@ fun FicheLigne(
                     if (type != "Crypto" && type != "Action")
                         OutlinedTextField(frais, { frais = it }, label = { Text("Frais courants du fonds (%/an)") }, singleLine = true, keyboardOptions = dec, modifier = Modifier.fillMaxWidth())
                 }
+                OutlinedTextField(dateAchat, { dateAchat = it }, label = { Text("Date d'achat (jj/mm/aaaa) — sert à reconstituer l'historique") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(notes, { notes = it }, label = { Text("Notes") }, modifier = Modifier.fillMaxWidth())
                 if (type != "Crypto") {
                     // Plusieurs contrats possibles : vos contrats en boutons (vert), autres établissements en texte libre (orange)
@@ -184,6 +187,7 @@ fun FicheLigne(
                     tauxAnnuel = dbl(taux)?.div(100),
                     fraisAnnuels = dbl(frais)?.div(100),
                     notes = notes.trim().ifEmpty { null },
+                    dateAchat = runCatching { java.time.LocalDate.parse(dateAchat.trim(), jjmmaaaa).toEpochDay() }.getOrNull() ?: p0?.dateAchat,
                     disponibilites = dispo.trim().ifEmpty { null },
                     aSurveiller = surveiller
                 ))

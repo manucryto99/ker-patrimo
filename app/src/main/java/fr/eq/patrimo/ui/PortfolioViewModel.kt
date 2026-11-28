@@ -341,6 +341,51 @@ class PortfolioViewModel(app: Application, val base: String = "patrimo.db") : An
         }
     }
 
+    /**
+     * Reconstitue l'historique (Tout, catégories, contrats) à partir des achats : pour chaque jour depuis la plus ancienne
+     * date d'achat, nombre de parts × cours de clôture du jour, pour les lignes déjà achetées ce jour-là.
+     * Les relevés automatiques existants ne sont pas remplacés.
+     */
+    fun reconstituerHistorique() {
+        viewModelScope.launch {
+            _busy.value = true
+            _progression.value = Progression(0.05f, "Préparation…", null)
+            val msg = withContext(Dispatchers.IO) {
+                val pos = dao.positions().filter { !it.aSurveiller && it.quantite > 0 && it.isin != null }
+                val avec = pos.filter { it.dateAchat != null }
+                val sans = pos.filter { it.dateAchat == null }
+                if (avec.isEmpty()) return@withContext "Aucune ligne n'a de date d'achat.\n\nRenseigne-la dans la fiche de chaque titre (champ « Date d'achat »), puis relance."
+                val auj = LocalDate.now().toEpochDay()
+                val debut = avec.minOf { it.dateAchat!! }
+                val lignes = Portfolio.lignes(avec, dao.contrats())
+                val prix = dao.pricesSince(debut - 10).groupBy { it.isin }.mapValues { (_, v) -> serieFiable(v.sortedBy { it.epochDay }) }
+                val jours = lignes.flatMap { l -> prix[l.p.isin].orEmpty().map { it.epochDay } }.filter { it in debut until auj }.distinct().sorted()
+                val auto = dao.observeHistorique().first().filter { it.source == "auto" }.map { it.epochDay to it.portefeuille }.toSet()
+                val pts = ArrayList<fr.eq.patrimo.data.PointHistorique>()
+                jours.forEachIndexed { n, d ->
+                    if (n % 50 == 0) _progression.value = Progression(0.1f + 0.7f * n / jours.size, "Reconstitution : ${n + 1} / ${jours.size} jours", null)
+                    val vals = lignes.filter { it.p.dateAchat!! <= d }.mapNotNull { l ->
+                        prix[l.p.isin]?.lastOrNull { it.epochDay <= d }?.close?.let { c -> Triple(l, l.p.quantite * c, l.investi) }
+                    }
+                    if (vals.isEmpty()) return@forEachIndexed
+                    fun ajoute(nom: String, v: List<Triple<fr.eq.patrimo.domain.Ligne, Double, Double>>) {
+                        if ((d to nom) !in auto) pts += fr.eq.patrimo.data.PointHistorique(d, nom, v.sumOf { it.second }, v.sumOf { it.third }, "reconstitue")
+                    }
+                    ajoute("TOTAL", vals)
+                    vals.groupBy { it.first.p.enveloppe }.forEach { (e, v) -> ajoute(e, v) }
+                    vals.groupBy { it.first.p.contrat }.forEach { (c, v) -> ajoute(c, v) }
+                }
+                pts.chunked(500).forEach { dao.upsertHistorique(it) }
+                val f = java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy")
+                "Historique reconstitué du ${LocalDate.ofEpochDay(debut).format(f)} à hier : ${jours.size} jours, ${avec.size} ligne(s)." +
+                    (if (sans.isNotEmpty()) "\n\nSans date d'achat, donc non comptées : " + sans.joinToString(", ") { it.libelle } else "") +
+                    "\n\nHypothèse : nombre de parts actuel depuis la date d'achat (pas d'achats ou ventes intermédiaires). Fonds euros et lignes sans cotation non reconstitués."
+            }
+            _progression.value = null; _busy.value = false
+            _bilan.value = msg
+        }
+    }
+
     fun viderHistoriqueImporte() { viewModelScope.launch { dao.viderHistoriqueImporte(); _info.value = "Historique importé effacé (relevés automatiques conservés)" } }
 
     /** Montants versés communiqués par l'utilisateur (une seule fois ; modifiables ensuite dans les Réglages). */

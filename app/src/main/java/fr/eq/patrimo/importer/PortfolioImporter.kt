@@ -107,7 +107,7 @@ object PortfolioImporter {
             pru = pru,
             valeurManuelle = manuelle,
             tauxAnnuel = rate(r.col("taux")),
-            dateAchat = date(r.col("date")),
+            dateAchat = date(r.col("date d'achat", "date d achat", "date")),
             fraisAnnuels = rate(r.col("frais")),
             notes = r.col("notes"),
             dernierCours = num(r.col("dernier cours")), // affiché en attendant la 1re mise à jour en ligne

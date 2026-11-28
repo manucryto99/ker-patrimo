@@ -80,6 +80,9 @@ fun Historique(vm: PortfolioViewModel) {
             }
             OutlinedButton(enabled = progression == null, onClick = { launcher.launch(arrayOf("*/*")) }, shape = RoundedCornerShape(12.dp)) { Text("Importer", fontSize = 12.sp) }
         }
+        TextButton(enabled = progression == null, onClick = vm::reconstituerHistorique) {
+            Text("Reconstituer depuis les dates d'achat", fontSize = 12.sp, color = C.Or)
+        }
         if (histo.isEmpty()) {
             Text("Importe ton historique (Excel ou CSV : une colonne Date puis la valeur de chaque portefeuille). " +
                 "Ensuite, l'appli relève chaque jour la valeur du total, de chaque catégorie et de chaque contrat.", color = C.Discret, fontSize = 12.sp,
@@ -133,7 +136,7 @@ fun Historique(vm: PortfolioViewModel) {
             item {
                 Text("• relevé automatique de l'appli · sans point : valeur importée", color = C.Discret, fontSize = 10.sp, modifier = Modifier.padding(top = 8.dp))
                 TextButton(onClick = { if (confirmer) { vm.viderHistoriqueImporte(); confirmer = false } else confirmer = true }) {
-                    Text(if (confirmer) "Confirmer : effacer les valeurs importées" else "Effacer l'historique importé", color = C.Discret, fontSize = 12.sp)
+                    Text(if (confirmer) "Confirmer : effacer les valeurs importées et reconstituées" else "Effacer l'historique importé / reconstitué", color = C.Discret, fontSize = 12.sp)
                 }
             }
         }

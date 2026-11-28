@@ -160,7 +160,7 @@ abstract class PortfolioDao {
     @androidx.room.Insert(onConflict = androidx.room.OnConflictStrategy.REPLACE)
     abstract suspend fun upsertHistorique(items: List<PointHistorique>)
 
-    @Query("DELETE FROM historique WHERE source = 'import'")
+    @Query("DELETE FROM historique WHERE source != 'auto'")
     abstract suspend fun viderHistoriqueImporte()
 
     @Query("SELECT COUNT(*) FROM prices")
