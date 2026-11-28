@@ -69,7 +69,7 @@ fun Carte(modifier: Modifier = Modifier, titre: String? = null, content: @Compos
 
 /** Courbe dorée avec dégradé, façon appli patrimoniale. */
 @Composable
-fun CourbeChart(points: List<PointCourbe>, modifier: Modifier = Modifier) {
+fun CourbeChart(points: List<PointCourbe>, modifier: Modifier = Modifier, selection: Int? = null) {
     Canvas(modifier) {
         if (points.size < 2) return@Canvas
         val vs = points.map { it.valeur }
@@ -87,6 +87,13 @@ fun CourbeChart(points: List<PointCourbe>, modifier: Modifier = Modifier) {
         drawPath(aire, Brush.verticalGradient(listOf(C.Or.copy(alpha = .35f), Color.Transparent)))
         drawPath(ligne, C.Or, style = Stroke(width = 2.2.dp.toPx(), join = StrokeJoin.Round))
         drawCircle(C.Or, 4.5.dp.toPx(), Offset(x(vs.lastIndex), y(vs.last())))
+        // Point lu au doigt : trait vertical pointillé et point
+        selection?.takeIf { it in vs.indices }?.let { i ->
+            drawLine(C.Discret, Offset(x(i), 0f), Offset(x(i), size.height), strokeWidth = 1.dp.toPx(),
+                pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(6f, 5f)))
+            drawCircle(Color.White, 5.dp.toPx(), Offset(x(i), y(vs[i])))
+            drawCircle(C.Or, 3.5.dp.toPx(), Offset(x(i), y(vs[i])))
+        }
     }
 }
 

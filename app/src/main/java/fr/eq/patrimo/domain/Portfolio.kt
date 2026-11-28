@@ -33,8 +33,13 @@ data class Ligne(
 }
 
 enum class Periode(val label: String, val jours: Long, val secondes: Long = 0) {
-    H1("1H", 0, 3_600), J1("1J", 1, 86_400),
-    S1("1S", 7), M1("1M", 31), M6("6M", 183), A1("1A", 365), A5("5A", 1826);
+    H1("1H", 0, 3_600), J1("1J", 1, 86_400), J3("3J", 3, 3 * 86_400),
+    S1("1S", 7), M1("1M", 31), M3("3M", 91), M6("6M", 183), A1("1A", 365), A5("5A", 1826);
+    /** Texte sous l'indicateur. */
+    val detail: String get() = when (this) {
+        H1 -> "sur 1 heure glissante"; J1 -> "sur 24 h glissantes"; J3 -> "sur 3 jours glissants"; S1 -> "sur 7 jours"
+        M1 -> "sur 1 mois"; M3 -> "sur 3 mois"; M6 -> "sur 6 mois"; A1 -> "sur 1 an"; A5 -> "sur 5 ans"
+    }
     /** 1H et 1J : courbe tracée avec les cours intraday (minute / 5 minutes). */
     val intraday: Boolean get() = secondes > 0
 }

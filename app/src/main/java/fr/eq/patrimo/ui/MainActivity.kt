@@ -83,6 +83,10 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import fr.eq.patrimo.domain.PointCourbe
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.layout.offset
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.draw.shadow
@@ -237,29 +241,28 @@ fun Accueil(vm: PortfolioViewModel) {
         }, color = C.Discret, fontSize = 13.sp, modifier = Modifier.padding(top = 12.dp))
         val investi = lignes.sumOf { it.investi }; val gain = lignes.sumOf { it.gain }
         Text(Portfolio.eur(total), fontSize = 38.sp, fontWeight = FontWeight.Bold)
-        // Gros indicateur de variation : jour / 1 semaine / 1 mois
+        // Une seule échelle de temps pour l'indicateur et la courbe : la variation affichée est celle de la courbe
         run {
-            val (dv, pv) = Portfolio.variation(lignes, vars, horizon)
+            val ok = courbe.size >= 2 && courbe.first().valeur > 0
+            val dv = if (ok) courbe.last().valeur - courbe.first().valeur else 0.0
+            val pv = if (ok) dv / courbe.first().valeur else 0.0
             Column(Modifier.padding(vertical = 8.dp).fillMaxWidth().background(C.Carte, RoundedCornerShape(16.dp)).padding(14.dp)) {
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    fr.eq.patrimo.domain.Horizon.entries.forEach { h ->
-                        FilterChip(selected = h == horizon, onClick = { vm.setHorizon(h) }, label = { Text(h.label, fontSize = 12.sp, maxLines = 1) }, modifier = Modifier.height(30.dp))
+                    Periode.entries.forEach { p ->
+                        FilterChip(selected = p == periode, onClick = { vm.setPeriode(p) }, label = { Text(p.label, fontSize = 12.sp, maxLines = 1) }, modifier = Modifier.height(30.dp))
                     }
                 }
-                Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.Bottom) {
+                if (ok) Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.Bottom) {
                     Text((if (dv >= 0) "▲ " else "▼ ") + Portfolio.signe(dv), fontSize = 30.sp, fontWeight = FontWeight.Bold, color = C.signe(dv))
                     Text("  " + Portfolio.pct(pv), fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = C.signe(dv), modifier = Modifier.padding(bottom = 3.dp))
-                }
-                Text(horizon.detail + " · lignes cotées (fonds euros et cash comptés stables)", color = C.Discret, fontSize = 11.sp)
+                } else Text("—", fontSize = 30.sp, color = C.Discret, modifier = Modifier.padding(top = 6.dp))
+                Text(periode.detail.replaceFirstChar { it.uppercase() } + " · fonds euros et cash comptés stables", color = C.Discret, fontSize = 11.sp)
             }
         }
         Text("Investi ${Portfolio.eur(investi)} · plus-value ${Portfolio.signe(gain)} (${Portfolio.pct(if (investi > 0) gain / investi else 0.0)})",
             color = C.Discret, fontSize = 13.sp)
-        if (courbe.size >= 2) {
-            val d = courbe.last().valeur - courbe.first().valeur
-            Text("${Portfolio.signe(d)} (${Portfolio.pct(d / courbe.first().valeur)}) sur ${periode.label}", color = C.signe(d), fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-        }
-        CourbeChart(courbe, Modifier.fillMaxWidth().height(200.dp).padding(vertical = 12.dp))
+        // Courbe : toucher ou glisser le doigt affiche la valeur à cette date (l'indicateur du haut ne change pas)
+        CourbeInteractive(courbe, Modifier.fillMaxWidth().padding(top = 10.dp))
         if (courbe.isNotEmpty()) Row(Modifier.fillMaxWidth()) {
             val f = DateTimeFormatter.ofPattern("d MMM yyyy", Locale.FRANCE)
             val debut = courbe.first().epochSec
@@ -273,10 +276,7 @@ fun Accueil(vm: PortfolioViewModel) {
             }
         }
         if (periode.intraday && courbe.size < 2) Text("Cours intraday indisponibles pour l'instant (hors ligne ?)", color = C.Discret, fontSize = 12.sp)
-        Row(Modifier.padding(vertical = 10.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            Periode.entries.forEach { p -> FilterChip(selected = p == periode, onClick = { vm.setPeriode(p) }, label = { Text(p.label) }) }
-        }
-        Text("Courbe à composition constante (positions actuelles)", color = C.Discret, fontSize = 11.sp, modifier = Modifier.padding(bottom = 10.dp))
+        Text("Courbe à composition constante (positions actuelles)", color = C.Discret, fontSize = 11.sp, modifier = Modifier.padding(top = 6.dp, bottom = 10.dp))
         // Tout : répartition par catégorie ; une catégorie : répartition par contrat / compte
         val env = if (categorie == null) Portfolio.parEnveloppe(lignes)
             else if (comptes.size == 1) lignes.groupBy { it.p.type }.mapValues { (_, v) -> v.sumOf { it.valeur } }.toList().sortedByDescending { it.second }
@@ -835,5 +835,33 @@ fun eurCompact(x: Double): String {
         a >= 10_000 -> s + String.format(Locale.FRANCE, "%.0f", a / 1_000) + " k€"
         a >= 1_000 -> s + String.format(Locale.FRANCE, "%.1f", a / 1_000) + " k€"
         else -> s + String.format(Locale.FRANCE, "%.0f", a) + " €"
+    }
+}
+
+/** Courbe avec lecture au doigt : un appui ou un glissé affiche la date, la valeur et l'écart depuis le début de la période. */
+@Composable
+fun CourbeInteractive(points: List<PointCourbe>, modifier: Modifier = Modifier) {
+    var sel by remember(points) { mutableStateOf<Int?>(null) }
+    Column(modifier) {
+        val p = sel?.let { points.getOrNull(it) }
+        val texte = if (p == null || points.isEmpty()) "Touchez la courbe pour lire une valeur" else {
+            val quand = p.epochSec?.let { java.time.Instant.ofEpochSecond(it).atZone(java.time.ZoneId.systemDefault())
+                .format(DateTimeFormatter.ofPattern("EEE d MMM HH:mm", Locale.FRANCE)) }
+                ?: LocalDate.ofEpochDay(p.epochDay).format(DateTimeFormatter.ofPattern("EEE d MMM yyyy", Locale.FRANCE))
+            val d = p.valeur - points.first().valeur
+            "$quand · ${Portfolio.eur(p.valeur)} · ${Portfolio.signe(d)} (${Portfolio.pct(if (points.first().valeur > 0) d / points.first().valeur else 0.0)})"
+        }
+        Text(texte, color = if (p == null) C.Discret else C.Or, fontSize = 12.sp, fontWeight = if (p == null) FontWeight.Normal else FontWeight.SemiBold, maxLines = 1)
+        Box(Modifier.fillMaxWidth().height(200.dp).padding(vertical = 8.dp)
+            .pointerInput(points) {
+                fun indice(x: Float) = if (points.size < 2) null else ((x / size.width) * (points.size - 1)).toInt().coerceIn(0, points.lastIndex)
+                detectTapGestures { o -> sel = if (sel != null && sel == indice(o.x)) null else indice(o.x) }
+            }
+            .pointerInput(points) {
+                fun indice(x: Float) = if (points.size < 2) null else ((x / size.width) * (points.size - 1)).toInt().coerceIn(0, points.lastIndex)
+                detectHorizontalDragGestures(onDragStart = { o -> sel = indice(o.x) }) { change, _ -> sel = indice(change.position.x) }
+            }) {
+            CourbeChart(points, Modifier.fillMaxSize(), sel)
+        }
     }
 }
