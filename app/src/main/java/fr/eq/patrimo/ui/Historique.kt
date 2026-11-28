@@ -3,6 +3,15 @@ package fr.eq.patrimo.ui
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -94,7 +103,7 @@ fun Historique(vm: PortfolioViewModel) {
                 Text("  ${Portfolio.signe(dv)} (${Portfolio.pct(if (serie.first().valeur > 0) dv / serie.first().valeur else 0.0)})",
                     color = C.signe(dv), fontSize = 13.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(bottom = 3.dp))
             }
-            CourbeInteractive(serie.map { PointCourbe(it.epochDay, it.valeur) }, Modifier.fillMaxWidth().padding(top = 6.dp))
+            CourbeDouble(serie, Modifier.fillMaxWidth().padding(top = 6.dp))
             Row(Modifier.fillMaxWidth()) {
                 Text(LocalDate.ofEpochDay(serie.first().epochDay).format(f), color = C.Discret, fontSize = 11.sp)
                 Spacer(Modifier.weight(1f)); Text(LocalDate.ofEpochDay(serie.last().epochDay).format(f), color = C.Discret, fontSize = 11.sp)
@@ -104,6 +113,7 @@ fun Historique(vm: PortfolioViewModel) {
         Row(Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 4.dp)) {
             Text("Date", color = C.Discret, fontSize = 11.sp, modifier = Modifier.weight(1f))
             Text("Valeur", color = C.Discret, fontSize = 11.sp, textAlign = TextAlign.End, modifier = Modifier.weight(1f))
+            Text("Plus-value", color = C.Discret, fontSize = 11.sp, textAlign = TextAlign.End, modifier = Modifier.weight(1f))
             Text("Var. jour", color = C.Discret, fontSize = 11.sp, textAlign = TextAlign.End, modifier = Modifier.weight(1f))
         }
         LazyColumn(Modifier.weight(1f)) {
@@ -113,6 +123,7 @@ fun Historique(vm: PortfolioViewModel) {
                 Row(Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
                     Text(LocalDate.ofEpochDay(p.epochDay).format(f) + if (p.source == "auto") " •" else "", fontSize = 12.sp, modifier = Modifier.weight(1f))
                     Text(Portfolio.eur(p.valeur), fontSize = 12.sp, textAlign = TextAlign.End, modifier = Modifier.weight(1f))
+                    Text(p.investi?.let { Portfolio.signe(p.valeur - it) } ?: "—", color = C.PlusValue, fontSize = 12.sp, textAlign = TextAlign.End, modifier = Modifier.weight(1f))
                     val d = avant?.let { p.valeur - it.valeur }
                     Text(d?.let { Portfolio.signe(it) } ?: "", color = d?.let { C.signe(it) } ?: C.Discret, fontSize = 12.sp, textAlign = TextAlign.End, modifier = Modifier.weight(1f))
                 }
@@ -122,6 +133,74 @@ fun Historique(vm: PortfolioViewModel) {
                 TextButton(onClick = { if (confirmer) { vm.viderHistoriqueImporte(); confirmer = false } else confirmer = true }) {
                     Text(if (confirmer) "Confirmer : effacer les valeurs importées" else "Effacer l'historique importé", color = C.Discret, fontSize = 12.sp)
                 }
+            }
+        }
+    }
+}
+
+/**
+ * Valeur (doré, échelle de gauche) et plus-value = valeur − investi (bleu, échelle de droite).
+ * Toucher ou glisser affiche la date, la valeur et la plus-value du jour.
+ */
+@Composable
+fun CourbeDouble(serie: List<fr.eq.patrimo.data.PointHistorique>, modifier: Modifier = Modifier) {
+    var sel by remember(serie) { mutableStateOf<Int?>(null) }
+    val pv = serie.map { p -> p.investi?.let { p.valeur - it } }
+    val aPv = pv.count { it != null } >= 2
+    val f = DateTimeFormatter.ofPattern("EEE d MMM yyyy", Locale.FRANCE)
+    Column(modifier) {
+        val p = sel?.let { serie.getOrNull(it) }
+        Text(if (p == null) "Touchez la courbe pour lire une valeur" else
+            LocalDate.ofEpochDay(p.epochDay).format(f) + " · " + Portfolio.eur(p.valeur) + (pv[sel!!]?.let { "  · PV " + Portfolio.signe(it) } ?: ""),
+            color = if (p == null) C.Discret else C.Or, fontSize = 12.sp, fontWeight = if (p == null) FontWeight.Normal else FontWeight.SemiBold, maxLines = 1)
+        Row(Modifier.fillMaxWidth().padding(top = 4.dp)) {
+            Text("— Valeur", color = C.Or, fontSize = 11.sp)
+            if (aPv) Text("   — Plus-value (échelle de droite)", color = C.PlusValue, fontSize = 11.sp)
+        }
+        androidx.compose.foundation.layout.Box(Modifier.fillMaxWidth().height(210.dp).padding(vertical = 8.dp)
+            .pointerInput(serie) {
+                fun i(x: Float) = if (serie.size < 2) null else ((x / size.width) * (serie.size - 1)).toInt().coerceIn(0, serie.lastIndex)
+                detectTapGestures { o -> sel = if (sel != null && sel == i(o.x)) null else i(o.x) }
+            }
+            .pointerInput(serie) {
+                fun i(x: Float) = if (serie.size < 2) null else ((x / size.width) * (serie.size - 1)).toInt().coerceIn(0, serie.lastIndex)
+                detectHorizontalDragGestures(onDragStart = { o -> sel = i(o.x) }) { c, _ -> sel = i(c.position.x) }
+            }) {
+            androidx.compose.foundation.Canvas(Modifier.fillMaxSize()) {
+                if (serie.size < 2) return@Canvas
+                fun x(i: Int) = i.toFloat() / (serie.size - 1) * size.width
+                fun echelle(vs: List<Double>): (Double) -> Float {
+                    val mn = vs.min(); val mx = vs.max(); val pad = ((mx - mn) * 0.1).takeIf { it > 0 } ?: 1.0
+                    return { v -> (size.height - (v - mn + pad) / (mx - mn + 2 * pad) * size.height).toFloat() }
+                }
+                val yV = echelle(serie.map { it.valeur })
+                val ligne = Path().apply { serie.forEachIndexed { i, p -> if (i == 0) moveTo(x(i), yV(p.valeur)) else lineTo(x(i), yV(p.valeur)) } }
+                val aire = Path().apply { addPath(ligne); lineTo(size.width, size.height); lineTo(0f, size.height); close() }
+                drawPath(aire, Brush.verticalGradient(listOf(C.Or.copy(alpha = .28f), androidx.compose.ui.graphics.Color.Transparent)))
+                drawPath(ligne, C.Or, style = Stroke(2.dp.toPx(), join = StrokeJoin.Round))
+                if (aPv) {
+                    val yP = echelle(pv.filterNotNull())
+                    val lp = Path(); var debut = true
+                    pv.forEachIndexed { i, v -> if (v != null) { if (debut) lp.moveTo(x(i), yP(v)) else lp.lineTo(x(i), yP(v)); debut = false } }
+                    drawPath(lp, C.PlusValue, style = Stroke(1.8.dp.toPx(), join = StrokeJoin.Round))
+                    // zéro de la plus-value, si visible
+                    val z = yP(0.0); if (z in 0f..size.height) drawLine(C.PlusValue.copy(alpha = .35f), Offset(0f, z), Offset(size.width, z), 1.dp.toPx())
+                }
+                sel?.let { i ->
+                    drawLine(C.Discret, Offset(x(i), 0f), Offset(x(i), size.height), 1.dp.toPx(),
+                        pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(6f, 5f)))
+                    drawCircle(C.Or, 4.dp.toPx(), Offset(x(i), yV(serie[i].valeur)))
+                    if (aPv) pv[i]?.let { v -> drawCircle(C.PlusValue, 4.dp.toPx(), Offset(x(i), echelle(pv.filterNotNull())(v))) }
+                }
+            }
+            // Bornes des deux échelles
+            val vs = serie.map { it.valeur }
+            Text(Portfolio.eur(vs.max()), color = C.Or.copy(alpha = .8f), fontSize = 9.sp, modifier = Modifier.align(Alignment.TopStart))
+            Text(Portfolio.eur(vs.min()), color = C.Or.copy(alpha = .8f), fontSize = 9.sp, modifier = Modifier.align(Alignment.BottomStart))
+            if (aPv) {
+                val ps = pv.filterNotNull()
+                Text(Portfolio.signe(ps.max()), color = C.PlusValue, fontSize = 9.sp, modifier = Modifier.align(Alignment.TopEnd))
+                Text(Portfolio.signe(ps.min()), color = C.PlusValue, fontSize = 9.sp, modifier = Modifier.align(Alignment.BottomEnd))
             }
         }
     }

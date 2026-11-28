@@ -37,7 +37,7 @@ object HistoriqueImporter {
         val cDate = entete.indexOf("date")
         val cPort = entete.indexOfFirst { it.startsWith("portefeuille") || it == "compte" || it == "contrat" || it == "categorie" }
         val cVal = entete.indexOfFirst { it.startsWith("valeur") || it == "montant" }
-        val cInv = entete.indexOfFirst { it.startsWith("investi") || it.startsWith("verse") }
+        val cInv = entete.indexOfFirst { it.startsWith("investi") || it.startsWith("verse") || it.startsWith("apport") || it == "montant investi" }
         val res = ArrayList<PointHistorique>()
         for (l in lignes.drop(iEntete + 1)) {
             val d = l.getOrNull(cDate)?.let(::date) ?: continue
