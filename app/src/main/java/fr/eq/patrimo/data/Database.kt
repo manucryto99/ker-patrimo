@@ -161,9 +161,10 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun dao(): PortfolioDao
 
     companion object {
-        @Volatile private var instance: AppDatabase? = null
-        fun get(context: Context): AppDatabase = instance ?: synchronized(this) {
-            instance ?: Room.databaseBuilder(context.applicationContext, AppDatabase::class.java, "patrimo.db")
+        /** Une base par patrimoine : patrimo.db (Emmanuel, base d'origine), patrimo_natalia.db, patrimo_estelle.db. */
+        private val instances = java.util.concurrent.ConcurrentHashMap<String, AppDatabase>()
+        fun get(context: Context, nom: String = "patrimo.db"): AppDatabase = instances[nom] ?: synchronized(this) {
+            instances[nom] ?: Room.databaseBuilder(context.applicationContext, AppDatabase::class.java, nom)
                 // v4 -> v5 : ajout d'une colonne, sans perdre les lignes saisies
                 .addMigrations(object : androidx.room.migration.Migration(4, 5) {
                     override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
@@ -176,7 +177,7 @@ abstract class AppDatabase : RoomDatabase() {
                     }
                 })
                 .fallbackToDestructiveMigration() // phase de développement : on réimporte l'Excel
-                .build().also { instance = it }
+                .build().also { instances[nom] = it }
         }
     }
 }

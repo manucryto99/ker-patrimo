@@ -34,8 +34,14 @@ import kotlinx.coroutines.withContext
 import java.time.LocalDate
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
-class PortfolioViewModel(app: Application) : AndroidViewModel(app) {
-    private val dao = AppDatabase.get(app).dao()
+class PortfolioViewModel(app: Application, val base: String = "patrimo.db") : AndroidViewModel(app) {
+    private val dao = AppDatabase.get(app, base).dao()
+
+    /** Fabrique : un ViewModel par patrimoine (base de données distincte). */
+    class Fabrique(private val app: Application, private val base: String) : androidx.lifecycle.ViewModelProvider.Factory {
+        @Suppress("UNCHECKED_CAST")
+        override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T = PortfolioViewModel(app, base) as T
+    }
     private val quotes = QuoteService(dao)
     val settings = AssistantSettings(app)
     private val assistant = Assistant(settings)
@@ -263,7 +269,7 @@ class PortfolioViewModel(app: Application) : AndroidViewModel(app) {
 
     init {
         // Enveloppes d'épargne retraite / salariale : contrats créés s'ils n'existent pas (frais modifiables dans les Réglages)
-        viewModelScope.launch {
+        if (base == "patrimo.db") viewModelScope.launch {
             val existants = dao.contrats().map { it.etablissement to it.contrat }.toSet()
             val voulus = listOf(
                 fr.eq.patrimo.data.Contrat("Amundi", "PER Amundi", "PER", source = "créé dans l'appli", modifie = true),
@@ -288,10 +294,10 @@ class PortfolioViewModel(app: Application) : AndroidViewModel(app) {
             // Historique complet la 1re fois, puis les 3 derniers mois rechargés deux fois par jour (variations semaine / mois sans trou)
             val prefs = getApplication<Application>().getSharedPreferences("cours", android.content.Context.MODE_PRIVATE)
             // Une fois : rechargement complet sur 5 ans pour remplacer les anciens historiques mal mis à l'échelle
-            val complet = sansHistorique || !prefs.getBoolean("histo5ans_v26", false)
-            val recharger = complet || System.currentTimeMillis() - prefs.getLong("histo2", 0) > 12 * 3_600_000L
+            val complet = sansHistorique || !prefs.getBoolean("histo5ans_v26_$base", false)
+            val recharger = complet || System.currentTimeMillis() - prefs.getLong("histo2_$base", 0) > 12 * 3_600_000L
             val r = quotes.refreshAll(withHistory = recharger, range = if (complet) "5y" else "3mo")
-            if (recharger && r.ok > 0) prefs.edit().putLong("histo2", System.currentTimeMillis()).putBoolean("histo5ans_v26", true).apply()
+            if (recharger && r.ok > 0) prefs.edit().putLong("histo2_$base", System.currentTimeMillis()).putBoolean("histo5ans_v26_$base", true).apply()
             historyVersion.update { it + 1 }
             _busy.value = false
             if (!silencieux || r.failed.isNotEmpty()) _info.value =

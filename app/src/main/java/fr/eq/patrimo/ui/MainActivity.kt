@@ -116,12 +116,24 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 class MainActivity : ComponentActivity() {
-    private val vm: PortfolioViewModel by viewModels()
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         RefreshWorker.planifier(this)
-        setContent { PatrimoTheme { Box(Modifier.fillMaxSize()) { App(vm); PageAccueil(montrer = savedInstanceState == null) } } }
+        setContent {
+            PatrimoTheme {
+                var deverrouille by rememberSaveable { mutableStateOf(false) }
+                var profilId by rememberSaveable { mutableStateOf<String?>(null) }
+                val profil = PROFILS.firstOrNull { it.id == profilId }
+                Box(Modifier.fillMaxSize()) {
+                    if (profil != null) {
+                        val vm: PortfolioViewModel = androidx.lifecycle.viewmodel.compose.viewModel(
+                            key = profil.id, factory = PortfolioViewModel.Fabrique(application, profil.base))
+                        App(vm, profil) { profilId = null }
+                    }
+                    PageAccueil(visible = profil == null, deverrouille = deverrouille, onDeverrouille = { deverrouille = true }, onChoix = { profilId = it.id })
+                }
+            }
+        }
     }
 }
 
@@ -129,7 +141,7 @@ class MainActivity : ComponentActivity() {
 private val XLSX_TYPES = arrayOf("*/*")
 
 @Composable
-fun App(vm: PortfolioViewModel) {
+fun App(vm: PortfolioViewModel, profil: Profil, changerPatrimoine: () -> Unit) {
     var onglet by rememberSaveable { mutableIntStateOf(0) }
     var reglages by remember { mutableStateOf(false) }
     val busy by vm.busy.collectAsStateWithLifecycle()
@@ -161,13 +173,14 @@ fun App(vm: PortfolioViewModel) {
                         Text("Ker ", fontFamily = FontFamily.Serif, fontStyle = FontStyle.Italic, fontSize = 20.sp, color = C.Or)
                         Text("Patrimo", fontWeight = FontWeight.Bold, fontSize = 19.sp)
                     }
-                    Text(version, color = C.Discret, fontSize = 8.sp, lineHeight = 8.sp, modifier = Modifier.offset(y = (-3).dp))
+                    Text("${profil.nom} · $version", color = C.Discret, fontSize = 8.sp, lineHeight = 8.sp, modifier = Modifier.offset(y = (-3).dp))
                 }
                 // Médaillon doré de l'enfant, à côté du nom
+                // Médaillon du patrimoine affiché : un appui ramène au choix des patrimoines
                 Box(Modifier.padding(start = 10.dp).size(38.dp)
                     .background(androidx.compose.ui.graphics.Brush.linearGradient(listOf(Color(0xFFF3DFA6), Color(0xFFB8913F))), CircleShape)
-                    .padding(2.5.dp).clip(CircleShape)) {
-                    Image(painterResource(R.drawable.medaillon_enfant), contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+                    .padding(2.5.dp).clip(CircleShape).clickable { changerPatrimoine() }) {
+                    Image(painterResource(profil.photo), contentDescription = "Changer de patrimoine", contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
                 }
                 Spacer(Modifier.weight(1f))
                 if (busy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = C.Or)
@@ -703,13 +716,43 @@ fun Vide() {
     }
 }
 
+/** Les trois patrimoines : chacun a sa propre base de données (celle d'Emmanuel est la base d'origine). */
+data class Profil(val id: String, val nom: String, val base: String, val photo: Int)
+val PROFILS = listOf(
+    Profil("emmanuel", "Emmanuel", "patrimo.db", R.drawable.medaillon_enfant),
+    Profil("natalia", "Natalia", "patrimo_natalia.db", R.drawable.profil_natalia),
+    Profil("estelle", "Estelle", "patrimo_estelle.db", R.drawable.profil_estelle)
+)
+
+/** Après le code : trois boutons-photos, un par patrimoine. */
+@Composable
+fun ChoixPatrimoine(hEcran: androidx.compose.ui.unit.Dp, onChoix: (Profil) -> Unit) {
+    Box(Modifier.fillMaxSize().background(Color(0x990D0F14))) {
+        Column(Modifier.align(Alignment.TopCenter).padding(top = hEcran * 0.30f), horizontalAlignment = Alignment.CenterHorizontally) {
+            Row(horizontalArrangement = Arrangement.spacedBy(18.dp)) {
+                PROFILS.forEach { p ->
+                    Column(horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.clip(RoundedCornerShape(16.dp)).clickable { onChoix(p) }.padding(6.dp)) {
+                        Box(Modifier.size(96.dp)
+                            .shadow(12.dp, CircleShape, ambientColor = C.Or, spotColor = C.Or)
+                            .background(androidx.compose.ui.graphics.Brush.linearGradient(listOf(Color(0xFFF3DFA6), Color(0xFFB8913F))), CircleShape)
+                            .padding(4.dp).clip(CircleShape)) {
+                            Image(painterResource(p.photo), contentDescription = "Patrimoine ${p.nom}", contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+                        }
+                        Text(p.nom, color = C.Texte, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 8.dp))
+                    }
+                }
+            }
+        }
+    }
+}
+
 /** Code d'accès de la page d'accueil (provisoire, en dur). */
 private const val CODE_ACCES = "5522"
 
 /** Page d'accueil plein écran (bandeau en portrait) : apparaît avec un flou progressif, ne s'ouvre qu'avec le code. */
 @Composable
-fun PageAccueil(montrer: Boolean) {
-    var visible by rememberSaveable { mutableStateOf(montrer) }
+fun PageAccueil(visible: Boolean, deverrouille: Boolean, onDeverrouille: () -> Unit, onChoix: (Profil) -> Unit) {
     var saisie by rememberSaveable { mutableStateOf("") }
     var erreur by remember { mutableStateOf(false) }
     // Apparition : l'image passe de floue et transparente à nette
@@ -728,7 +771,7 @@ fun PageAccueil(montrer: Boolean) {
         if (saisie.length >= 4) return
         erreur = false
         saisie += ch
-        if (saisie.length == 4) { if (saisie == CODE_ACCES) { visible = false; clavierCache?.hide() } else erreur = true }
+        if (saisie.length == 4) { if (saisie == CODE_ACCES) { clavierCache?.hide(); saisie = ""; onDeverrouille() } else erreur = true }
     }
     androidx.compose.animation.AnimatedVisibility(
         visible = visible,
@@ -751,6 +794,7 @@ fun PageAccueil(montrer: Boolean) {
                 modifier = Modifier.fillMaxWidth().requiredHeight(hEcran).align(Alignment.TopCenter)
                     .graphicsLayer { alpha = t; scaleX = 1.08f - 0.08f * t; scaleY = 1.08f - 0.08f * t }
                     .blur(((1f - t) * 28f).dp))
+            if (deverrouille) { ChoixPatrimoine(hEcran, onChoix); return@Box }
             // Les 4 cases du code, juste sous le titre, sans texte : le clavier numérique du téléphone sert à la saisie
             val focus = remember { androidx.compose.ui.focus.FocusRequester() }
             val clavier = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
