@@ -44,10 +44,16 @@ fun Historique(vm: PortfolioViewModel) {
     val histo by vm.historique.collectAsStateWithLifecycle()
     val progression by vm.progression.collectAsStateWithLifecycle()
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri?.let(vm::importerHistorique) }
-    var choix by rememberSaveable { mutableStateOf("TOTAL") }
+    val contrats by vm.contrats.collectAsStateWithLifecycle()
+    // Menu à deux niveaux : Tout / catégories, puis contrats de la catégorie choisie
+    var cat by rememberSaveable { mutableStateOf<String?>(null) }
+    var contratSel by rememberSaveable { mutableStateOf<String?>(null) }
+    val choix = contratSel ?: cat ?: "TOTAL"
     var duree by rememberSaveable { mutableStateOf("1A") }
     var confirmer by remember { mutableStateOf(false) }
-    val portefeuilles = histo.map { it.portefeuille }.distinct().sortedWith(compareBy({ it != "TOTAL" }, { it }))
+    val presents = histo.map { it.portefeuille }.toSet()
+    val categories = contrats.map { it.enveloppe }.distinct().filter { it in presents }
+    val contratsDe = contrats.filter { it.enveloppe == cat && it.contrat in presents }.map { it.contrat }.distinct()
     val serieComplete = histo.filter { it.portefeuille == choix }.sortedBy { it.epochDay }
     val auj = LocalDate.now().toEpochDay()
     val jours = mapOf("1M" to 31L, "3M" to 91L, "6M" to 183L, "1A" to 366L, "5A" to 1827L, "Tout" to Long.MAX_VALUE / 4)
@@ -69,9 +75,15 @@ fun Historique(vm: PortfolioViewModel) {
                 modifier = Modifier.padding(top = 16.dp))
             return@Column
         }
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp), contentPadding = PaddingValues(vertical = 8.dp)) {
-            items(portefeuilles) { p -> FilterChip(selected = p == choix, onClick = { choix = p }, label = { Text(if (p == "TOTAL") "Tout" else p, fontSize = 12.sp) }) }
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp), contentPadding = PaddingValues(top = 8.dp)) {
+            item { FilterChip(selected = cat == null, onClick = { cat = null; contratSel = null }, label = { Text("Tout") }) }
+            items(categories) { c -> FilterChip(selected = c == cat, onClick = { cat = c; contratSel = null }, label = { Text(c) }) }
         }
+        if (cat != null && contratsDe.isNotEmpty()) LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp), contentPadding = PaddingValues(top = 2.dp)) {
+            item { FilterChip(selected = contratSel == null, onClick = { contratSel = null }, label = { Text("Tous", fontSize = 12.sp) }, modifier = Modifier.height(30.dp)) }
+            items(contratsDe) { c -> FilterChip(selected = c == contratSel, onClick = { contratSel = c }, label = { Text(c, fontSize = 12.sp) }, modifier = Modifier.height(30.dp)) }
+        }
+        Spacer(Modifier.height(6.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             jours.keys.forEach { d -> FilterChip(selected = d == duree, onClick = { duree = d }, label = { Text(d, fontSize = 12.sp) }, modifier = Modifier.height(30.dp)) }
         }
