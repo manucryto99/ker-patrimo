@@ -121,16 +121,17 @@ class MainActivity : ComponentActivity() {
         RefreshWorker.planifier(this)
         setContent {
             PatrimoTheme {
-                var deverrouille by rememberSaveable { mutableStateOf(false) }
+                var attenteId by rememberSaveable { mutableStateOf<String?>(null) }
                 var profilId by rememberSaveable { mutableStateOf<String?>(null) }
                 val profil = PROFILS.firstOrNull { it.id == profilId }
                 Box(Modifier.fillMaxSize()) {
                     if (profil != null) {
                         val vm: PortfolioViewModel = androidx.lifecycle.viewmodel.compose.viewModel(
                             key = profil.id, factory = PortfolioViewModel.Fabrique(application, profil.base))
-                        App(vm, profil) { profilId = null }
+                        App(vm, profil) { profilId = null; attenteId = null }
                     }
-                    PageAccueil(visible = profil == null, deverrouille = deverrouille, onDeverrouille = { deverrouille = true }, onChoix = { profilId = it.id })
+                    PageAccueil(visible = profil == null, enAttente = PROFILS.firstOrNull { it.id == attenteId },
+                        onChoix = { attenteId = it?.id }, onDeverrouille = { profilId = it.id })
                 }
             }
         }
@@ -717,11 +718,11 @@ fun Vide() {
 }
 
 /** Les trois patrimoines : chacun a sa propre base de données (celle d'Emmanuel est la base d'origine). */
-data class Profil(val id: String, val nom: String, val base: String, val photo: Int)
+data class Profil(val id: String, val nom: String, val base: String, val photo: Int, val code: String)
 val PROFILS = listOf(
-    Profil("emmanuel", "Emmanuel", "patrimo.db", R.drawable.medaillon_enfant),
-    Profil("natalia", "Natalia", "patrimo_natalia.db", R.drawable.profil_natalia),
-    Profil("estelle", "Estelle", "patrimo_estelle.db", R.drawable.profil_estelle)
+    Profil("emmanuel", "Emmanuel", "patrimo.db", R.drawable.medaillon_enfant, "5522"),
+    Profil("natalia", "Natalia", "patrimo_natalia.db", R.drawable.profil_natalia, "2233"),
+    Profil("estelle", "Estelle", "patrimo_estelle.db", R.drawable.profil_estelle, "5533")
 )
 
 /** Après le code : trois boutons-photos, un par patrimoine. */
@@ -747,12 +748,10 @@ fun ChoixPatrimoine(hEcran: androidx.compose.ui.unit.Dp, onChoix: (Profil) -> Un
     }
 }
 
-/** Code d'accès de la page d'accueil (provisoire, en dur). */
-private const val CODE_ACCES = "5522"
 
 /** Page d'accueil plein écran (bandeau en portrait) : apparaît avec un flou progressif, ne s'ouvre qu'avec le code. */
 @Composable
-fun PageAccueil(visible: Boolean, deverrouille: Boolean, onDeverrouille: () -> Unit, onChoix: (Profil) -> Unit) {
+fun PageAccueil(visible: Boolean, enAttente: Profil?, onChoix: (Profil?) -> Unit, onDeverrouille: (Profil) -> Unit) {
     var saisie by rememberSaveable { mutableStateOf("") }
     var erreur by remember { mutableStateOf(false) }
     // Apparition : l'image passe de floue et transparente à nette
@@ -771,7 +770,7 @@ fun PageAccueil(visible: Boolean, deverrouille: Boolean, onDeverrouille: () -> U
         if (saisie.length >= 4) return
         erreur = false
         saisie += ch
-        if (saisie.length == 4) { if (saisie == CODE_ACCES) { clavierCache?.hide(); saisie = ""; onDeverrouille() } else erreur = true }
+        if (saisie.length == 4) { if (enAttente != null && saisie == enAttente.code) { clavierCache?.hide(); saisie = ""; onDeverrouille(enAttente) } else erreur = true }
     }
     androidx.compose.animation.AnimatedVisibility(
         visible = visible,
@@ -794,12 +793,13 @@ fun PageAccueil(visible: Boolean, deverrouille: Boolean, onDeverrouille: () -> U
                 modifier = Modifier.fillMaxWidth().requiredHeight(hEcran).align(Alignment.TopCenter)
                     .graphicsLayer { alpha = t; scaleX = 1.08f - 0.08f * t; scaleY = 1.08f - 0.08f * t }
                     .blur(((1f - t) * 28f).dp))
-            if (deverrouille) { ChoixPatrimoine(hEcran, onChoix); return@Box }
+            // 1) choix du patrimoine, 2) code propre à ce patrimoine
+            if (enAttente == null) { ChoixPatrimoine(hEcran) { saisie = ""; erreur = false; onChoix(it) }; return@Box }
             // Les 4 cases du code, juste sous le titre, sans texte : le clavier numérique du téléphone sert à la saisie
             val focus = remember { androidx.compose.ui.focus.FocusRequester() }
             val clavier = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
             clavierCache = clavier
-            LaunchedEffect(Unit) { kotlinx.coroutines.delay(900); runCatching { focus.requestFocus(); clavier?.show() } }
+            LaunchedEffect(enAttente.id) { kotlinx.coroutines.delay(300); runCatching { focus.requestFocus(); clavier?.show() } }
             Box(Modifier.fillMaxSize()) {
                 androidx.compose.foundation.text.BasicTextField(
                     value = saisie,
@@ -808,6 +808,11 @@ fun PageAccueil(visible: Boolean, deverrouille: Boolean, onDeverrouille: () -> U
                     modifier = Modifier.size(1.dp).graphicsLayer { alpha = 0f }.focusRequester(focus)
                         .onFocusChanged { actif = it.isFocused }
                 )
+                Box(Modifier.align(Alignment.TopCenter).padding(top = hEcran * 0.285f - 70.dp).size(56.dp)
+                    .background(androidx.compose.ui.graphics.Brush.linearGradient(listOf(Color(0xFFF3DFA6), Color(0xFFB8913F))), CircleShape)
+                    .padding(3.dp).clip(CircleShape).clickable { clavierCache?.hide(); saisie = ""; onChoix(null) }) {
+                    Image(painterResource(enAttente.photo), contentDescription = "Retour au choix du patrimoine", contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+                }
                 Row(Modifier.align(Alignment.TopCenter).padding(top = hEcran * 0.285f)
                     .graphicsLayer { alpha = ((t - 0.5f) * 2f).coerceIn(0f, 1f); translationX = secousse.value }
                     .clickable(interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, indication = null) {
