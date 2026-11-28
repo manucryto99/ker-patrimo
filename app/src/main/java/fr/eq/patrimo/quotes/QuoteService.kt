@@ -83,7 +83,17 @@ class QuoteService(private val dao: PortfolioDao) {
         }
         // Photo du jour (utile pour les supports sans historique en ligne)
         val lignes = Portfolio.lignes(dao.positions().filter { !it.aSurveiller }, dao.contrats())
-        dao.upsertSnapshot(Snapshot(LocalDate.now().toEpochDay(), lignes.sumOf { it.valeur }, lignes.sumOf { it.investi }))
+        val auj = LocalDate.now().toEpochDay()
+        dao.upsertSnapshot(Snapshot(auj, lignes.sumOf { it.valeur }, lignes.sumOf { it.investi }))
+        // Relevé quotidien de l'historique : total, chaque catégorie et chaque contrat (dernière valeur de la journée)
+        if (lignes.isNotEmpty()) {
+            val pts = buildList {
+                add(fr.eq.patrimo.data.PointHistorique(auj, "TOTAL", lignes.sumOf { it.valeur }, lignes.sumOf { it.investi }))
+                lignes.groupBy { it.p.enveloppe }.forEach { (e, l) -> add(fr.eq.patrimo.data.PointHistorique(auj, e, l.sumOf { it.valeur }, l.sumOf { it.investi })) }
+                lignes.groupBy { it.p.contrat }.forEach { (c, l) -> add(fr.eq.patrimo.data.PointHistorique(auj, c, l.sumOf { it.valeur }, l.sumOf { it.investi })) }
+            }.distinctBy { it.portefeuille }
+            dao.upsertHistorique(pts)
+        }
         RefreshResult(ok, failed)
     }
 }

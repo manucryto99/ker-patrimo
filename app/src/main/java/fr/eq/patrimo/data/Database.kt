@@ -74,6 +74,13 @@ data class Contrat(
 @Entity(tableName = "prices", primaryKeys = ["isin", "epochDay"])
 data class PricePoint(val isin: String, val epochDay: Long, val close: Double)
 
+/**
+ * Historique de valeur par portefeuille (« TOTAL », une catégorie ou un contrat), un point par jour.
+ * source = "import" (fichier de l'utilisateur) ou "auto" (relevé quotidien de l'appli).
+ */
+@Entity(tableName = "historique", primaryKeys = ["epochDay", "portefeuille"])
+data class PointHistorique(val epochDay: Long, val portefeuille: String, val valeur: Double, val investi: Double? = null, val source: String = "auto")
+
 /** Valeur totale enregistrée chaque jour (sert aussi pour les supports sans historique). */
 @Entity(tableName = "snapshots")
 data class Snapshot(@PrimaryKey val epochDay: Long, val total: Double, val investi: Double)
@@ -146,6 +153,15 @@ abstract class PortfolioDao {
     @Query("DELETE FROM catalogue WHERE contrat = :contrat")
     abstract suspend fun viderCatalogue(contrat: String)
 
+    @Query("SELECT * FROM historique ORDER BY epochDay")
+    abstract fun observeHistorique(): Flow<List<PointHistorique>>
+
+    @androidx.room.Insert(onConflict = androidx.room.OnConflictStrategy.REPLACE)
+    abstract suspend fun upsertHistorique(items: List<PointHistorique>)
+
+    @Query("DELETE FROM historique WHERE source = 'import'")
+    abstract suspend fun viderHistoriqueImporte()
+
     @Query("SELECT COUNT(*) FROM prices")
     abstract suspend fun priceCount(): Int
 
@@ -156,7 +172,7 @@ abstract class PortfolioDao {
     abstract suspend fun snapshotsSince(from: Long): List<Snapshot>
 }
 
-@Database(entities = [Position::class, Contrat::class, PricePoint::class, Snapshot::class, FondsCatalogue::class], version = 6, exportSchema = false)
+@Database(entities = [Position::class, Contrat::class, PricePoint::class, Snapshot::class, FondsCatalogue::class, PointHistorique::class], version = 7, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun dao(): PortfolioDao
 
@@ -174,6 +190,11 @@ abstract class AppDatabase : RoomDatabase() {
                 .addMigrations(object : androidx.room.migration.Migration(5, 6) {
                     override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
                         db.execSQL("CREATE TABLE IF NOT EXISTS `catalogue` (`contrat` TEXT NOT NULL, `isin` TEXT NOT NULL, `libelle` TEXT NOT NULL, `etablissement` TEXT NOT NULL, PRIMARY KEY(`contrat`, `isin`))")
+                    }
+                })
+                .addMigrations(object : androidx.room.migration.Migration(6, 7) {
+                    override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                        db.execSQL("CREATE TABLE IF NOT EXISTS `historique` (`epochDay` INTEGER NOT NULL, `portefeuille` TEXT NOT NULL, `valeur` REAL NOT NULL, `investi` REAL, `source` TEXT NOT NULL, PRIMARY KEY(`epochDay`, `portefeuille`))")
                     }
                 })
                 .fallbackToDestructiveMigration() // phase de développement : on réimporte l'Excel

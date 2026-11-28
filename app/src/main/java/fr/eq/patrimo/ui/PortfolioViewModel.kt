@@ -29,6 +29,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.LocalDate
@@ -305,6 +306,41 @@ class PortfolioViewModel(app: Application, val base: String = "patrimo.db") : An
                 else "${r.ok} cours mis à jour · introuvables : ${r.failed.joinToString()}"
         }
     }
+
+    /** Historique de valeur (onglet Historique) : importé + relevé quotidien. */
+    val historique = dao.observeHistorique().stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    fun importerHistorique(uri: Uri) {
+        viewModelScope.launch {
+            _busy.value = true
+            _progression.value = Progression(0.1f, "Lecture de l'historique…", null)
+            val res = withContext(Dispatchers.IO) {
+                runCatching {
+                    val pts = getApplication<Application>().contentResolver.openInputStream(uri)!!.use(fr.eq.patrimo.importer.HistoriqueImporter::lire)
+                    _progression.value = Progression(0.5f, "Enregistrement de ${pts.size} valeurs…", null)
+                    // Un point importé ne remplace pas le relevé automatique du même jour pour le même portefeuille
+                    val auto = dao.observeHistorique().first().filter { it.source == "auto" }.map { it.epochDay to it.portefeuille }.toSet()
+                    val gardes = pts.filter { (it.epochDay to it.portefeuille) !in auto }
+                    gardes.chunked(500).forEachIndexed { i, c ->
+                        dao.upsertHistorique(c)
+                        _progression.value = Progression(0.5f + 0.5f * minOf(1f, (i + 1) * 500f / gardes.size.coerceAtLeast(1)), "Enregistrement…", null)
+                    }
+                    pts to gardes.size
+                }
+            }
+            _progression.value = null; _busy.value = false
+            _bilan.value = res.fold({ (pts, n) ->
+                if (pts.isEmpty()) "Aucune valeur trouvée.\n\nLe fichier doit avoir une colonne « Date », puis soit les colonnes « Portefeuille » et « Valeur », soit une colonne par portefeuille."
+                else {
+                    val f = java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy")
+                    val d1 = LocalDate.ofEpochDay(pts.minOf { it.epochDay }).format(f); val d2 = LocalDate.ofEpochDay(pts.maxOf { it.epochDay }).format(f)
+                    "$n valeurs importées, du $d1 au $d2.\n\nPortefeuilles : " + pts.map { it.portefeuille }.distinct().joinToString(", ")
+                }
+            }, { "Import impossible : ${it.message}" })
+        }
+    }
+
+    fun viderHistoriqueImporte() { viewModelScope.launch { dao.viderHistoriqueImporte(); _info.value = "Historique importé effacé (relevés automatiques conservés)" } }
 
     /** Bilan du dernier import, affiché dans une fenêtre jusqu'à ce qu'on la ferme. */
     private val _bilan = MutableStateFlow<String?>(null)

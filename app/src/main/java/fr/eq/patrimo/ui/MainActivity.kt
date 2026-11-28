@@ -53,6 +53,7 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.OutlinedButton
@@ -205,7 +206,7 @@ fun App(vm: PortfolioViewModel, profil: Profil, changerPatrimoine: () -> Unit) {
             NavigationBar(containerColor = C.Carte) {
                 listOf(
                     Triple("Patrimoine", Icons.Default.Home, 0),
-                    Triple("Surveiller", Icons.Default.Star, 4), Triple("Fonds", Icons.Default.Search, 5),
+                    Triple("Surveiller", Icons.Default.Star, 4), Triple("Fonds", Icons.Default.Search, 5), Triple("Historique", Icons.Default.DateRange, 6),
                     Triple("Assistant", Icons.Default.Person, 2), Triple("Alertes", Icons.Default.Notifications, 3)
                 ).forEach { (label, icon, i) ->
                     NavigationBarItem(selected = onglet == i, onClick = { onglet = i }, icon = { Icon(icon, label) }, label = { Text(label, fontSize = 10.sp, maxLines = 1) })
@@ -219,6 +220,7 @@ fun App(vm: PortfolioViewModel, profil: Profil, changerPatrimoine: () -> Unit) {
                 2 -> Discussion(vm)
                 4 -> Surveiller(vm)
                 5 -> Catalogue(vm) { onglet = 2 }
+                6 -> Historique(vm)
                 else -> Alertes(vm)
             }
         }
