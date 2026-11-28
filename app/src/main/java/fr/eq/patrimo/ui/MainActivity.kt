@@ -251,7 +251,7 @@ fun Accueil(vm: PortfolioViewModel) {
                     Text("  " + Portfolio.pct(pv), fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = C.signe(dv), modifier = Modifier.padding(bottom = 3.dp))
                 }
                 Text(when (horizon) {
-                    fr.eq.patrimo.domain.Horizon.JOUR -> "Depuis la clôture de la veille"
+                    fr.eq.patrimo.domain.Horizon.JOUR -> "Sur 24 h glissantes"
                     fr.eq.patrimo.domain.Horizon.SEMAINE -> "Sur 7 jours"
                     fr.eq.patrimo.domain.Horizon.MOIS -> "Sur 30 jours"
                 } + " · lignes cotées (fonds euros et cash comptés stables)", color = C.Discret, fontSize = 11.sp)

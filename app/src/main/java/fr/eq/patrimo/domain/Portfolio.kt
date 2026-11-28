@@ -136,26 +136,42 @@ object Portfolio {
     }
 
     /**
-     * Courbe intraday : chaque ligne cotée suit la variation relative de son cours (dernier point = valeur actuelle),
-     * les autres (fonds euros, UC à VL quotidienne, cash) restent constantes.
+     * Rapport « cours à l'instant t / cours actuel » d'une ligne, sur une fenêtre glissante :
+     * - cours intraday (Yahoo) si disponible ;
+     * - sinon VL quotidienne : à l'instant t on connaît la dernière VL d'un jour antérieur à celui de t
+     *   (aujourd'hui : la VL actuelle) ;
+     * - sinon (fonds euros, cash, FCPE non cotés) : constant.
      */
-    fun courbeIntraday(lignes: List<Ligne>, series: Map<String, List<Pair<Long, Double>>>, depuis: Long, maintenant: Long): List<PointCourbe> {
-        val utiles = series.filterValues { it.isNotEmpty() }
-        if (utiles.isEmpty()) return emptyList()
-        val grille = (utiles.values.flatMap { s -> s.map { it.first }.filter { it >= depuis } } + maintenant).toSortedSet().toList()
-        val pas = (grille.size / 240).coerceAtLeast(1)
-        val g = grille.filterIndexed { i, _ -> i % pas == 0 || i == grille.lastIndex }
-        return g.map { t ->
-            var total = 0.0
-            for (l in lignes) {
-                val s = l.p.symbole?.let { utiles[it] }
-                if (s == null || !l.estCote) { total += l.valeur; continue }
-                val dernier = s.last().second
-                val prix = s.lastOrNull { it.first <= t }?.second ?: s.first().second
-                total += if (dernier > 0) l.valeur * prix / dernier else l.valeur
-            }
-            PointCourbe(t / 86_400, total, t)
+    fun rapportA(l: Ligne, t: Long, intraday: Map<String, List<Pair<Long, Double>>>,
+                 quotidien: Map<String, List<Pair<Long, Double>>>, zone: java.time.ZoneId = java.time.ZoneId.systemDefault()): Double {
+        if (!l.estCote) return 1.0
+        l.p.symbole?.let { intraday[it] }?.takeIf { it.isNotEmpty() }?.let { s ->
+            val dernier = s.last().second
+            val prix = s.lastOrNull { it.first <= t }?.second ?: s.first().second
+            return if (dernier > 0) prix / dernier else 1.0
         }
+        val c = l.p.dernierCours ?: return 1.0
+        val serie = l.p.isin?.let { quotidien[it] }?.takeIf { it.isNotEmpty() } ?: return 1.0
+        val jour = java.time.Instant.ofEpochSecond(t).atZone(zone).toLocalDate().toEpochDay()
+        if (jour >= LocalDate.now(zone).toEpochDay()) return 1.0
+        val vl = serie.lastOrNull { it.first < jour }?.second ?: return 1.0
+        return if (c > 0 && vl > 0) vl / c else 1.0
+    }
+
+    /**
+     * Courbe glissante (1H / 1J) : valeur du portefeuille à chaque instant de [depuis, maintenant].
+     * Le premier point est exactement « maintenant − durée », le dernier « maintenant » :
+     * l'écart entre les deux est la variation affichée par l'indicateur.
+     */
+    fun courbeGlissante(lignes: List<Ligne>, intraday: Map<String, List<Pair<Long, Double>>>, quotidien: Map<String, List<Pair<Long, Double>>>,
+                        depuis: Long, maintenant: Long, zone: java.time.ZoneId = java.time.ZoneId.systemDefault()): List<PointCourbe> {
+        val minuits = generateSequence(java.time.Instant.ofEpochSecond(depuis).atZone(zone).toLocalDate().plusDays(1)) { it.plusDays(1) }
+            .map { it.atStartOfDay(zone).toEpochSecond() }.takeWhile { it < maintenant }.flatMap { sequenceOf(it - 1, it) }.toList()
+        val grille = (intraday.values.flatMap { s -> s.map { it.first }.filter { it in depuis..maintenant } } + minuits + depuis + maintenant)
+            .toSortedSet().toList()
+        val pas = (grille.size / 240).coerceAtLeast(1)
+        val g = grille.filterIndexed { i, t -> i % pas == 0 || i == grille.lastIndex || t in minuits }
+        return g.map { t -> PointCourbe(t / 86_400, lignes.sumOf { it.valeur * rapportA(it, t, intraday, quotidien, zone) }, t) }
     }
 
     /** Variation en euros d'une valeur actuelle qui a varié de v (relatif). */

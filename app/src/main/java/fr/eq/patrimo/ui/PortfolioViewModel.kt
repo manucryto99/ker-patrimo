@@ -83,11 +83,12 @@ class PortfolioViewModel(app: Application) : AndroidViewModel(app) {
     /** Cache des séries intraday : (symbole, période) -> (heure de chargement, série). */
     private val cacheIntraday = java.util.concurrent.ConcurrentHashMap<Pair<String, Periode>, Pair<Long, List<Pair<Long, Double>>>>()
 
-    private suspend fun courbeIntraday(l: List<Ligne>, p: Periode): List<PointCourbe> = withContext(Dispatchers.IO) {
+    /** Séries intraday (par symbole Yahoo) et VL quotidiennes récentes (par ISIN), pour les vues glissantes 1H / 1J. */
+    private suspend fun seriesIntraday(l: List<Ligne>, p: Periode): Map<String, List<Pair<Long, Double>>> {
         val maintenant = System.currentTimeMillis() / 1000
         val symboles = l.filter { it.estCote && it.p.source == "Yahoo" }.mapNotNull { it.p.symbole }.distinct()
         val (range, interval) = if (p == Periode.H1) "1d" to "1m" else "5d" to "5m"
-        val series = kotlinx.coroutines.coroutineScope {
+        return kotlinx.coroutines.coroutineScope {
             symboles.map { s ->
                 async {
                     val c = cacheIntraday[s to p]
@@ -95,16 +96,28 @@ class PortfolioViewModel(app: Application) : AndroidViewModel(app) {
                         else runCatching { yahoo.intraday(s, range, interval) }.getOrDefault(emptyList()).also { cacheIntraday[s to p] = maintenant to it }
                     s to serie
                 }
-            }.awaitAll().toMap()
+            }.awaitAll().toMap().filterValues { it.isNotEmpty() }
         }
-        // Fenêtre glissante qui se termine à la dernière cotation connue (marchés fermés : dernière séance)
-        val fin = minOf(maintenant, series.values.mapNotNull { it.lastOrNull()?.first }.maxOrNull() ?: maintenant)
-        val pts = Portfolio.courbeIntraday(l, series, fin - p.secondes, maintenant)
-        if (p != Periode.J1 || pts.isEmpty()) return@withContext pts
-        // 1J : la courbe part de la clôture de la veille (même référence que l'indicateur « Jour »),
-        // y compris pour les supports sans cours intraday (VL quotidienne)
-        val veille = l.sumOf { li -> li.varJour?.takeIf { it > -0.95 }?.let { li.valeur / (1 + it) } ?: li.valeur }
-        listOf(PointCourbe(pts.first().epochDay, veille, (pts.first().epochSec ?: maintenant) - 60)) + pts
+    }
+
+    private suspend fun seriesQuotidiennes(): Map<String, List<Pair<Long, Double>>> =
+        dao.pricesSince(LocalDate.now().toEpochDay() - 12).groupBy { it.isin }
+            .mapValues { (_, v) -> serieFiable(v.sortedBy { it.epochDay }).map { it.epochDay to it.close } }
+
+    /** Courbe 1H / 1J : fenêtre glissante qui se termine maintenant (le week-end aussi). */
+    private suspend fun courbeIntraday(l: List<Ligne>, p: Periode): List<PointCourbe> = withContext(Dispatchers.IO) {
+        val maintenant = System.currentTimeMillis() / 1000
+        Portfolio.courbeGlissante(l, seriesIntraday(l, p), seriesQuotidiennes(), maintenant - p.secondes, maintenant)
+    }
+
+    /** Variation sur 24 h glissantes de chaque ligne : même calcul que la courbe 1J. */
+    private suspend fun jour24(l: List<Ligne>): Map<Long, Double?> {
+        val maintenant = System.currentTimeMillis() / 1000
+        val intraday = seriesIntraday(l, Periode.J1); val quotidien = seriesQuotidiennes()
+        return l.associate { li ->
+            val r = Portfolio.rapportA(li, maintenant - 86_400, intraday, quotidien)
+            li.p.id to (if (li.estCote && r > 0) 1 / r - 1 else null)
+        }
     }
 
     /** Variations jour / semaine / mois par ligne (id de position). */
@@ -113,6 +126,7 @@ class PortfolioViewModel(app: Application) : AndroidViewModel(app) {
             withContext(Dispatchers.IO) {
                 val auj = LocalDate.now().toEpochDay()
                 val prix = dao.pricesSince(auj - 1835).groupBy { it.isin }.mapValues { (_, v) -> v.sortedBy { it.epochDay } }
+                val j24 = runCatching { jour24(l) }.getOrDefault(emptyMap())
                 l.filter { it.estCote && it.p.dernierCours != null }.associate { li ->
                     val c = li.p.dernierCours!!
                     val serie = serieFiable(li.p.isin?.let { prix[it] }.orEmpty())
@@ -120,7 +134,7 @@ class PortfolioViewModel(app: Application) : AndroidViewModel(app) {
                     // pas de chiffre si l'historique ne remonte pas assez loin (tolérance 5 jours)
                     fun depuis(n: Long): Double? = if (debut == null || debut > auj - n + 5) null
                         else serie.lastOrNull { it.epochDay <= auj - n }?.close?.takeIf { it > 0 }?.let { c / it - 1 }
-                    li.p.id to fr.eq.patrimo.domain.Variations(li.varJour, depuis(7), depuis(30), depuis(91), depuis(182), depuis(365), depuis(1826))
+                    li.p.id to fr.eq.patrimo.domain.Variations(j24[li.p.id] ?: li.varJour, depuis(7), depuis(30), depuis(91), depuis(182), depuis(365), depuis(1826))
                 }
             }
         }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
