@@ -67,7 +67,8 @@ data class Contrat(
     val plafondGarde: Double? = null,     // ex. 0.004 pour un PEA (plafond légal 0,40 %)
     val dateReleve: Long? = null,         // epochDay où les nombres de parts ont été relevés
     val source: String = "",              // d'où vient le barème
-    val modifie: Boolean = false          // modifié dans les Réglages : conservé lors d'un nouvel import
+    val modifie: Boolean = false,         // modifié dans les Réglages : conservé lors d'un nouvel import
+    val verse: Double? = null             // montant versé sur le contrat : base de la plus-value (sinon somme des montants investis par ligne)
 )
 
 /** Cours de clôture historique d'un ISIN, en EUR. */
@@ -172,7 +173,7 @@ abstract class PortfolioDao {
     abstract suspend fun snapshotsSince(from: Long): List<Snapshot>
 }
 
-@Database(entities = [Position::class, Contrat::class, PricePoint::class, Snapshot::class, FondsCatalogue::class, PointHistorique::class], version = 7, exportSchema = false)
+@Database(entities = [Position::class, Contrat::class, PricePoint::class, Snapshot::class, FondsCatalogue::class, PointHistorique::class], version = 8, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun dao(): PortfolioDao
 
@@ -190,6 +191,11 @@ abstract class AppDatabase : RoomDatabase() {
                 .addMigrations(object : androidx.room.migration.Migration(5, 6) {
                     override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
                         db.execSQL("CREATE TABLE IF NOT EXISTS `catalogue` (`contrat` TEXT NOT NULL, `isin` TEXT NOT NULL, `libelle` TEXT NOT NULL, `etablissement` TEXT NOT NULL, PRIMARY KEY(`contrat`, `isin`))")
+                    }
+                })
+                .addMigrations(object : androidx.room.migration.Migration(7, 8) {
+                    override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                        db.execSQL("ALTER TABLE contrats ADD COLUMN verse REAL")
                     }
                 })
                 .addMigrations(object : androidx.room.migration.Migration(6, 7) {

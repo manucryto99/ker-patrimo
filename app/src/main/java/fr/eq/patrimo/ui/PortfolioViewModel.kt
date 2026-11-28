@@ -270,6 +270,7 @@ class PortfolioViewModel(app: Application, val base: String = "patrimo.db") : An
 
     init {
         // Enveloppes d'épargne retraite / salariale : contrats créés s'ils n'existent pas (frais modifiables dans les Réglages)
+        versesConnus()
         if (base == "patrimo.db") viewModelScope.launch {
             val existants = dao.contrats().map { it.etablissement to it.contrat }.toSet()
             val voulus = listOf(
@@ -342,6 +343,31 @@ class PortfolioViewModel(app: Application, val base: String = "patrimo.db") : An
 
     fun viderHistoriqueImporte() { viewModelScope.launch { dao.viderHistoriqueImporte(); _info.value = "Historique importé effacé (relevés automatiques conservés)" } }
 
+    /** Montants versés communiqués par l'utilisateur (une seule fois ; modifiables ensuite dans les Réglages). */
+    private fun versesConnus() = viewModelScope.launch {
+        val prefs = getApplication<Application>().getSharedPreferences("cours", android.content.Context.MODE_PRIVATE)
+        if (prefs.getBoolean("verse_v52_$base", false)) return@launch
+        val cs = dao.contrats(); if (cs.isEmpty()) return@launch
+        val connus: Map<String, Double> = when (base) {
+            "patrimo.db" -> mapOf("CARDIF" to 207_700.0, "AFER1 Multisupport" to 39_764.0, "AFER2 Génération" to 32_966.0, "BoursoVie" to 61_000.0,
+                "LINXEA" to 20_000.0, "PEA" to 55_000.0, "REVOLUT" to 25_400.0, "TRADE REPUBLIC" to 195.0,
+                "PEE Amundi" to 9_382.17 - 2_184.25, "PER Amundi" to 6_688.37 - 437.02)
+            "patrimo_natalia.db" -> mapOf("CARDIF" to 9_500.0)
+            else -> emptyMap()
+        }
+        var maj = cs.filter { it.verse == null && it.contrat in connus }.map { it.copy(verse = connus.getValue(it.contrat), modifie = true) }
+        if (base == "patrimo.db") {
+            // Crypto : 23 800 € de référence, répartis entre plateformes au prorata de leur montant investi
+            val lignesCrypto = Portfolio.lignes(dao.positions().filter { !it.aSurveiller && it.enveloppe.equals("Crypto", true) }, cs)
+            val parC = lignesCrypto.groupBy { it.p.etablissement to it.p.contrat }.mapValues { (_, l) -> l.sumOf { it.investi } }
+            val tot = parC.values.sum()
+            if (tot > 0) maj = maj + cs.filter { it.verse == null && (it.etablissement to it.contrat) in parC }
+                .map { it.copy(verse = 23_800.0 * parC.getValue(it.etablissement to it.contrat) / tot, modifie = true) }
+        }
+        maj.forEach { dao.updateContrat(it) }
+        if (maj.isNotEmpty() || base != "patrimo.db") prefs.edit().putBoolean("verse_v52_$base", true).apply()
+    }
+
     /** Bilan du dernier import, affiché dans une fenêtre jusqu'à ce qu'on la ferme. */
     private val _bilan = MutableStateFlow<String?>(null)
     val bilan = _bilan.asStateFlow()
@@ -395,6 +421,7 @@ class PortfolioViewModel(app: Application, val base: String = "patrimo.db") : An
                 val detail = positions.groupBy { "${it.enveloppe} · ${it.contrat}" }.entries.joinToString("\n") { (k, v) -> "• $k : ${v.size} ligne(s)" }
                 _bilan.value = (if (list.complet) "Patrimoine remplacé par le fichier." else "Ajouté au patrimoine (les autres contrats n'ont pas été modifiés).") +
                     "\n\n$detail\n\nCours trouvés en ligne : ${r.ok}" + (if (r.failed.isNotEmpty()) " · sans cotation : ${r.failed.size} (valeur du fichier conservée)" else "")
+                versesConnus()
                 // Fichier partiel : on affiche directement la catégorie importée
                 if (!list.complet) positions.map { it.enveloppe }.distinct().singleOrNull()?.let { setCategorie(it) }
             }.onFailure { _progression.value = null; _busy.value = false; _bilan.value = "Import impossible : ${it.message}" }

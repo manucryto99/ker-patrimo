@@ -109,6 +109,7 @@ private fun CarteContrat(c: Contrat, lignes: List<Ligne>, enregistrer: (Contrat)
     var fixe by remember(c) { mutableStateOf(if (c.droitsFixesParLigne > 0) String.format(Locale.FRANCE, "%.2f", c.droitsFixesParLigne) else "") }
     var plafond by remember(c) { mutableStateOf(fractionEnPct(c.plafondGarde)) }
     var releve by remember(c) { mutableStateOf(c.dateReleve?.let { LocalDate.ofEpochDay(it).format(JJMMAAAA) } ?: "") }
+    var verse by remember(c) { mutableStateOf(c.verse?.let { String.format(Locale.FRANCE, "%.2f", it) } ?: "") }
     val coutAn = lignes.sumOf { it.fraisContratAn + it.gardeAn }
     val valeur = lignes.sumOf { it.valeur }
     Carte(titre = "${c.etablissement} · ${c.contrat}") {
@@ -116,6 +117,9 @@ private fun CarteContrat(c: Contrat, lignes: List<Ligne>, enregistrer: (Contrat)
             if (valeur > 0) " (${Portfolio.pctAbs(coutAn / valeur, 2)})" else "", color = C.Or, fontSize = 13.sp)
         Spacer(Modifier.padding(top = 8.dp))
         val dec = KeyboardOptions(keyboardType = KeyboardType.Decimal)
+        // Montant versé : base de la plus-value du contrat (vide = somme des montants investis par ligne)
+        OutlinedTextField(verse, { verse = it }, label = { Text("Montant versé (€) — base de la plus-value") }, singleLine = true, keyboardOptions = dec,
+            placeholder = { Text(Portfolio.eur(lignes.sumOf { it.investi }) + " (calculé)") }, modifier = Modifier.fillMaxWidth())
         when {
             crypto -> Text("Pas de frais récurrents modélisés pour la crypto.", color = C.Discret, fontSize = 13.sp)
             assurance -> {
@@ -134,7 +138,7 @@ private fun CarteContrat(c: Contrat, lignes: List<Ligne>, enregistrer: (Contrat)
         }
         if (c.source.isNotBlank()) Text(c.source, color = C.Discret, fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp))
         if (c.modifie) Text("Modifié par vous", color = C.Or, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
-        if (!crypto) Button(
+        Button(
             onClick = {
                 enregistrer(c.copy(
                     fraisGestionUc = pctEnFraction(uc) ?: 0.0,
@@ -142,7 +146,8 @@ private fun CarteContrat(c: Contrat, lignes: List<Ligne>, enregistrer: (Contrat)
                     droitsDeGarde = bareme.trim(),
                     droitsFixesParLigne = fixe.replace(",", ".").trim().toDoubleOrNull() ?: 0.0,
                     plafondGarde = pctEnFraction(plafond),
-                    dateReleve = runCatching { LocalDate.parse(releve.trim(), JJMMAAAA).toEpochDay() }.getOrNull() ?: c.dateReleve
+                    dateReleve = runCatching { LocalDate.parse(releve.trim(), JJMMAAAA).toEpochDay() }.getOrNull() ?: c.dateReleve,
+                    verse = verse.replace(" ", "").replace("\u00A0", "").replace("€", "").replace(",", ".").trim().toDoubleOrNull()
                 ))
             },
             shape = RoundedCornerShape(12.dp), modifier = Modifier.padding(top = 10.dp)

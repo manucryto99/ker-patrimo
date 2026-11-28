@@ -255,7 +255,9 @@ fun Accueil(vm: PortfolioViewModel) {
             comptes.isEmpty() -> categorie!!
             else -> "$categorie · ${comptes.joinToString()}"
         }, color = C.Discret, fontSize = 13.sp, modifier = Modifier.padding(top = 12.dp))
-        val investi = lignes.sumOf { it.investi }; val gain = lignes.sumOf { it.gain }
+        // Plus-value calculée sur le montant versé de chaque contrat (Réglages), sinon sur les montants investis par ligne
+        val contratsBase by vm.contrats.collectAsStateWithLifecycle()
+        val investi = Portfolio.investiEffectif(lignes, contratsBase); val gain = lignes.sumOf { it.valeur } - investi
         Text(Portfolio.eur(total), fontSize = 38.sp, fontWeight = FontWeight.Bold)
         // Une seule échelle de temps pour l'indicateur et la courbe : la variation affichée est celle de la courbe
         run {
@@ -327,7 +329,7 @@ fun Accueil(vm: PortfolioViewModel) {
         // Plus et moins-values par portefeuille (dès que plusieurs contrats sont affichés)
         // Tout : par catégorie (Assurance vie, PEA…) ; une catégorie : par contrat de cette catégorie
         val parContrat = lignes.groupBy { if (categorie == null) it.p.enveloppe else it.p.contrat }
-            .map { (c, l) -> c to l.sumOf { it.gain } }.sortedByDescending { it.second }
+            .map { (c, l) -> c to (l.sumOf { it.valeur } - Portfolio.investiEffectif(l, contratsBase)) }.sortedByDescending { it.second }
         var pmvOuvert by rememberSaveable { mutableStateOf(false) }
         if (parContrat.size > 1) Column(Modifier.fillMaxWidth().padding(top = 12.dp).background(C.Carte, RoundedCornerShape(16.dp)).padding(horizontal = 12.dp, vertical = 4.dp)) {
             Row(Modifier.fillMaxWidth().clickable { pmvOuvert = !pmvOuvert }.padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -410,7 +412,7 @@ private fun MenuCategories(vm: PortfolioViewModel, toutes: List<fr.eq.patrimo.do
     }
     // Liste cliquable des contrats de la catégorie (une ou plusieurs sélections)
     if (categorie != null) {
-        val parContrat = lignesCat.groupBy { it.p.contrat }.map { (c, l) -> Triple(c, l.sumOf { it.valeur }, l.sumOf { it.investi } to l.sumOf { it.gain }) }
+        val parContrat = lignesCat.groupBy { it.p.contrat }.map { (c, l) -> val iv = Portfolio.investiEffectif(l, contrats); Triple(c, l.sumOf { it.valeur }, iv to (l.sumOf { it.valeur } - iv)) }
             .sortedByDescending { it.second }
         LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp), contentPadding = PaddingValues(top = 2.dp)) {
             item {
@@ -497,8 +499,9 @@ fun DetailTitres(vm: PortfolioViewModel, lignes: List<Ligne>, vars: Map<Long, fr
     }
     // Bandeau repliable à part : totaux et variations du total
     var totOuvert by rememberSaveable { mutableStateOf(false) }
+    val contratsTot by vm.contrats.collectAsStateWithLifecycle()
     Column(Modifier.fillMaxWidth().padding(top = 12.dp).background(C.Carte, RoundedCornerShape(16.dp)).padding(horizontal = 10.dp, vertical = 4.dp)) {
-        val tInv = vues.sumOf { it.investi }; val tVal = vues.sumOf { it.valeur }
+        val tInv = Portfolio.investiEffectif(vues, contratsTot); val tVal = vues.sumOf { it.valeur }
         Row(Modifier.fillMaxWidth().clickable { totOuvert = !totOuvert }.padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(if (totOuvert) "▾" else "▸", color = C.Or, fontSize = 16.sp)
             Text("  Totaux", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, modifier = Modifier.weight(1f))
@@ -509,7 +512,7 @@ fun DetailTitres(vm: PortfolioViewModel, lignes: List<Ligne>, vars: Map<Long, fr
                     Spacer(Modifier.weight(1.6f))
                     listOf("Investi", "Valeur", "+/- €", "+/- %").forEach { Text(it, color = C.Discret, fontSize = 11.sp, textAlign = TextAlign.End, modifier = Modifier.weight(1f)) }
                 }
-                val inv = vues.sumOf { it.investi }; val v = vues.sumOf { it.valeur }
+                val inv = Portfolio.investiEffectif(vues, contratsTot); val v = vues.sumOf { it.valeur }
                 Row(Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 10.dp)) {
                     Text("Total", fontWeight = FontWeight.Bold, fontSize = 13.sp, modifier = Modifier.weight(1.6f))
                     Cellule(Portfolio.eur(inv), bold = true); Cellule(Portfolio.eur(v), bold = true)

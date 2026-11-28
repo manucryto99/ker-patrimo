@@ -186,6 +186,15 @@ object Portfolio {
         return g.map { t -> PointCourbe(t / 86_400, lignes.sumOf { it.valeur * rapportA(it, t, intraday, quotidien, zone) }, t) }
     }
 
+    /**
+     * Montant investi de référence d'un ensemble de lignes : pour chaque contrat, le « montant versé » s'il est renseigné
+     * (Réglages), sinon la somme des montants investis par ligne.
+     */
+    fun investiEffectif(lignes: List<Ligne>, contrats: List<Contrat>): Double =
+        lignes.groupBy { it.p.etablissement to it.p.contrat }.entries.sumOf { (k, l) ->
+            contrats.firstOrNull { it.etablissement == k.first && it.contrat == k.second }?.verse ?: l.sumOf { it.investi }
+        }
+
     /** Variation en euros d'une valeur actuelle qui a varié de v (relatif). */
     // garde-fou : une baisse de plus de 95 % est presque toujours une donnée erronée
     fun deltaEur(valeur: Double, v: Double?): Double = if (v == null || v <= -0.95) 0.0 else valeur * v / (1 + v)

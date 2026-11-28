@@ -87,10 +87,12 @@ class QuoteService(private val dao: PortfolioDao) {
         dao.upsertSnapshot(Snapshot(auj, lignes.sumOf { it.valeur }, lignes.sumOf { it.investi }))
         // Relevé quotidien de l'historique : total, chaque catégorie et chaque contrat (dernière valeur de la journée)
         if (lignes.isNotEmpty()) {
+            val cs = dao.contrats()
+            fun inv(l: List<fr.eq.patrimo.domain.Ligne>) = Portfolio.investiEffectif(l, cs)
             val pts = buildList {
-                add(fr.eq.patrimo.data.PointHistorique(auj, "TOTAL", lignes.sumOf { it.valeur }, lignes.sumOf { it.investi }))
-                lignes.groupBy { it.p.enveloppe }.forEach { (e, l) -> add(fr.eq.patrimo.data.PointHistorique(auj, e, l.sumOf { it.valeur }, l.sumOf { it.investi })) }
-                lignes.groupBy { it.p.contrat }.forEach { (c, l) -> add(fr.eq.patrimo.data.PointHistorique(auj, c, l.sumOf { it.valeur }, l.sumOf { it.investi })) }
+                add(fr.eq.patrimo.data.PointHistorique(auj, "TOTAL", lignes.sumOf { it.valeur }, inv(lignes)))
+                lignes.groupBy { it.p.enveloppe }.forEach { (e, l) -> add(fr.eq.patrimo.data.PointHistorique(auj, e, l.sumOf { it.valeur }, inv(l))) }
+                lignes.groupBy { it.p.contrat }.forEach { (c, l) -> add(fr.eq.patrimo.data.PointHistorique(auj, c, l.sumOf { it.valeur }, inv(l))) }
             }.distinctBy { it.portefeuille }
             dao.upsertHistorique(pts)
         }
