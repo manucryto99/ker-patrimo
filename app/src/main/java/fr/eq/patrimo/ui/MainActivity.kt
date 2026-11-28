@@ -218,9 +218,6 @@ fun Accueil(vm: PortfolioViewModel) {
     val horizon by vm.horizon.collectAsStateWithLifecycle()
     if (toutes.isEmpty()) { Vide(); return }
     // Tableau de bord par catégorie : Tout / Assurance vie / PEA / CTO / Crypto
-    // Catégories : celles qui ont des lignes, puis celles des contrats encore vides (ex. PER, PEE)
-    val contrats by vm.contrats.collectAsStateWithLifecycle()
-    val categories = (Portfolio.parEnveloppe(toutes).map { it.first } + contrats.map { it.enveloppe }).distinct()
     val lignesCat = toutes.filter { categorie == null || it.p.enveloppe == categorie }
     // Contrats cochés : tous les indicateurs ci-dessous ne portent que sur eux
     val lignes = lignesCat.filter { comptes.isEmpty() || it.p.contrat in comptes }
@@ -382,7 +379,9 @@ private enum class Tri(val label: String) { INVESTI("Investi"), VALEUR("Valeur")
 private fun MenuCategories(vm: PortfolioViewModel, toutes: List<fr.eq.patrimo.domain.Ligne>) {
     val categorie by vm.categorie.collectAsStateWithLifecycle()
     val comptes by vm.comptes.collectAsStateWithLifecycle()
-    val categories = Portfolio.parEnveloppe(toutes).map { it.first }
+    // Catégories : celles qui ont des lignes, puis celles des contrats encore vides (ex. PER, PEE)
+    val contrats by vm.contrats.collectAsStateWithLifecycle()
+    val categories = (Portfolio.parEnveloppe(toutes).map { it.first } + contrats.map { it.enveloppe }).distinct()
     val lignesCat = toutes.filter { categorie == null || it.p.enveloppe == categorie }
     LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp), contentPadding = PaddingValues(top = 8.dp)) {
         item { FilterChip(selected = categorie == null, onClick = { vm.setCategorie(null) }, label = { Text("Tout") }) }

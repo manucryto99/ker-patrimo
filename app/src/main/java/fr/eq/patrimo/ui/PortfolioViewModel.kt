@@ -99,7 +99,12 @@ class PortfolioViewModel(app: Application) : AndroidViewModel(app) {
         }
         // Fenêtre glissante qui se termine à la dernière cotation connue (marchés fermés : dernière séance)
         val fin = minOf(maintenant, series.values.mapNotNull { it.lastOrNull()?.first }.maxOrNull() ?: maintenant)
-        Portfolio.courbeIntraday(l, series, fin - p.secondes, maintenant)
+        val pts = Portfolio.courbeIntraday(l, series, fin - p.secondes, maintenant)
+        if (p != Periode.J1 || pts.isEmpty()) return@withContext pts
+        // 1J : la courbe part de la clôture de la veille (même référence que l'indicateur « Jour »),
+        // y compris pour les supports sans cours intraday (VL quotidienne)
+        val veille = l.sumOf { li -> li.varJour?.takeIf { it > -0.95 }?.let { li.valeur / (1 + it) } ?: li.valeur }
+        listOf(PointCourbe(pts.first().epochDay, veille, (pts.first().epochSec ?: maintenant) - 60)) + pts
     }
 
     /** Variations jour / semaine / mois par ligne (id de position). */
