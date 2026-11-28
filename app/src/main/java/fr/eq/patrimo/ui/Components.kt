@@ -35,6 +35,7 @@ object C {
     val Or = Color(0xFFD9B46A)
     val Orange = Color(0xFFF2994A)
     val Parts = Color(0xFF7FB8E6)
+    val Investi = Color(0xFF8A929E)    // gris : montant investi
     val PlusValue = Color(0xFF5DADE2)  // courbe de plus-value (échelle secondaire)   // bleu clair : nombre de parts
     val OrDoux = Color(0xFF2A2418)
     val Hausse = Color(0xFF3CCF91)

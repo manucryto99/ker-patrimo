@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -37,6 +38,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -123,7 +125,7 @@ fun Historique(vm: PortfolioViewModel) {
                 Row(Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
                     Text(LocalDate.ofEpochDay(p.epochDay).format(f) + if (p.source == "auto") " •" else "", fontSize = 12.sp, modifier = Modifier.weight(1f))
                     Text(Portfolio.eur(p.valeur), fontSize = 12.sp, textAlign = TextAlign.End, modifier = Modifier.weight(1f))
-                    Text(p.investi?.let { Portfolio.signe(p.valeur - it) } ?: "—", color = C.PlusValue, fontSize = 12.sp, textAlign = TextAlign.End, modifier = Modifier.weight(1f))
+                    Text(p.investi?.let { Portfolio.signe(p.valeur - it) } ?: "—", color = if (p.investi != null && p.valeur < p.investi) C.Baisse else C.PlusValue, fontSize = 12.sp, textAlign = TextAlign.End, modifier = Modifier.weight(1f))
                     val d = avant?.let { p.valeur - it.valeur }
                     Text(d?.let { Portfolio.signe(it) } ?: "", color = d?.let { C.signe(it) } ?: C.Discret, fontSize = 12.sp, textAlign = TextAlign.End, modifier = Modifier.weight(1f))
                 }
@@ -139,69 +141,79 @@ fun Historique(vm: PortfolioViewModel) {
 }
 
 /**
- * Valeur (doré, échelle de gauche) et plus-value = valeur − investi (bleu, échelle de droite).
- * Toucher ou glisser affiche la date, la valeur et la plus-value du jour.
+ * Aires empilées sur une seule échelle : investi (gris) en bas, plus-value (bleu) ajoutée par-dessus jusqu'à la valeur.
+ * Une moins-value apparaît en rouge sous la ligne d'investi. Toucher ou glisser affiche les montants du jour.
  */
 @Composable
 fun CourbeDouble(serie: List<fr.eq.patrimo.data.PointHistorique>, modifier: Modifier = Modifier) {
     var sel by remember(serie) { mutableStateOf<Int?>(null) }
-    val pv = serie.map { p -> p.investi?.let { p.valeur - it } }
-    val aPv = pv.count { it != null } >= 2
+    val aInv = serie.count { it.investi != null } >= 2
     val f = DateTimeFormatter.ofPattern("EEE d MMM yyyy", Locale.FRANCE)
     Column(modifier) {
-        val p = sel?.let { serie.getOrNull(it) }
-        Text(if (p == null) "Touchez la courbe pour lire une valeur" else
-            LocalDate.ofEpochDay(p.epochDay).format(f) + " · " + Portfolio.eur(p.valeur) + (pv[sel!!]?.let { "  · PV " + Portfolio.signe(it) } ?: ""),
-            color = if (p == null) C.Discret else C.Or, fontSize = 12.sp, fontWeight = if (p == null) FontWeight.Normal else FontWeight.SemiBold, maxLines = 1)
-        Row(Modifier.fillMaxWidth().padding(top = 4.dp)) {
-            Text("— Valeur", color = C.Or, fontSize = 11.sp)
-            if (aPv) Text("   — Plus-value (échelle de droite)", color = C.PlusValue, fontSize = 11.sp)
+        // Montants du point lu (ou du dernier point) : investi en gris, plus-value en bleu
+        val i = sel ?: serie.lastIndex
+        val p = serie.getOrNull(i)
+        if (p != null) Text(androidx.compose.ui.text.buildAnnotatedString {
+            withStyle(androidx.compose.ui.text.SpanStyle(color = if (sel != null) C.Or else C.Discret)) {
+                append(if (sel != null) LocalDate.ofEpochDay(p.epochDay).format(f) + " · " else "Dernier relevé · ")
+            }
+            append(Portfolio.eur(p.valeur))
+            p.investi?.let { inv ->
+                withStyle(androidx.compose.ui.text.SpanStyle(color = C.Investi)) { append("  ·  investi " + Portfolio.eur(inv)) }
+                withStyle(androidx.compose.ui.text.SpanStyle(color = if (p.valeur >= inv) C.PlusValue else C.Baisse, fontWeight = FontWeight.SemiBold)) {
+                    append("  ·  PV " + Portfolio.signe(p.valeur - inv))
+                }
+            }
+        }, fontSize = 12.sp, maxLines = 2)
+        if (aInv) Row(Modifier.padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            androidx.compose.foundation.layout.Box(Modifier.padding(end = 4.dp).height(10.dp).width(10.dp).background(C.Investi, RoundedCornerShape(2.dp)))
+            Text("Investi", color = C.Investi, fontSize = 11.sp)
+            androidx.compose.foundation.layout.Box(Modifier.padding(start = 12.dp, end = 4.dp).height(10.dp).width(10.dp).background(C.PlusValue, RoundedCornerShape(2.dp)))
+            Text("Plus-value", color = C.PlusValue, fontSize = 11.sp)
+            androidx.compose.foundation.layout.Box(Modifier.padding(start = 12.dp, end = 4.dp).height(10.dp).width(10.dp).background(C.Baisse.copy(alpha = .6f), RoundedCornerShape(2.dp)))
+            Text("Moins-value", color = C.Baisse, fontSize = 11.sp)
         }
-        androidx.compose.foundation.layout.Box(Modifier.fillMaxWidth().height(210.dp).padding(vertical = 8.dp)
+        androidx.compose.foundation.layout.Box(Modifier.fillMaxWidth().height(220.dp).padding(vertical = 8.dp)
             .pointerInput(serie) {
-                fun i(x: Float) = if (serie.size < 2) null else ((x / size.width) * (serie.size - 1)).toInt().coerceIn(0, serie.lastIndex)
-                detectTapGestures { o -> sel = if (sel != null && sel == i(o.x)) null else i(o.x) }
+                fun idx(x: Float) = if (serie.size < 2) null else ((x / size.width) * (serie.size - 1)).toInt().coerceIn(0, serie.lastIndex)
+                detectTapGestures { o -> sel = if (sel != null && sel == idx(o.x)) null else idx(o.x) }
             }
             .pointerInput(serie) {
-                fun i(x: Float) = if (serie.size < 2) null else ((x / size.width) * (serie.size - 1)).toInt().coerceIn(0, serie.lastIndex)
-                detectHorizontalDragGestures(onDragStart = { o -> sel = i(o.x) }) { c, _ -> sel = i(c.position.x) }
+                fun idx(x: Float) = if (serie.size < 2) null else ((x / size.width) * (serie.size - 1)).toInt().coerceIn(0, serie.lastIndex)
+                detectHorizontalDragGestures(onDragStart = { o -> sel = idx(o.x) }) { c, _ -> sel = idx(c.position.x) }
             }) {
+            val max = serie.maxOf { maxOf(it.valeur, it.investi ?: 0.0) } * 1.05
             androidx.compose.foundation.Canvas(Modifier.fillMaxSize()) {
-                if (serie.size < 2) return@Canvas
-                fun x(i: Int) = i.toFloat() / (serie.size - 1) * size.width
-                fun echelle(vs: List<Double>): (Double) -> Float {
-                    val mn = vs.min(); val mx = vs.max(); val pad = ((mx - mn) * 0.1).takeIf { it > 0 } ?: 1.0
-                    return { v -> (size.height - (v - mn + pad) / (mx - mn + 2 * pad) * size.height).toFloat() }
+                if (serie.size < 2 || max <= 0) return@Canvas
+                fun x(k: Int) = k.toFloat() / (serie.size - 1) * size.width
+                fun y(v: Double) = (size.height - v / max * size.height).toFloat()
+                fun aire(haut: (Int) -> Double, bas: (Int) -> Double) = Path().apply {
+                    serie.indices.forEach { k -> if (k == 0) moveTo(x(k), y(haut(k))) else lineTo(x(k), y(haut(k))) }
+                    serie.indices.reversed().forEach { k -> lineTo(x(k), y(bas(k))) }
+                    close()
                 }
-                val yV = echelle(serie.map { it.valeur })
-                val ligne = Path().apply { serie.forEachIndexed { i, p -> if (i == 0) moveTo(x(i), yV(p.valeur)) else lineTo(x(i), yV(p.valeur)) } }
-                val aire = Path().apply { addPath(ligne); lineTo(size.width, size.height); lineTo(0f, size.height); close() }
-                drawPath(aire, Brush.verticalGradient(listOf(C.Or.copy(alpha = .28f), androidx.compose.ui.graphics.Color.Transparent)))
-                drawPath(ligne, C.Or, style = Stroke(2.dp.toPx(), join = StrokeJoin.Round))
-                if (aPv) {
-                    val yP = echelle(pv.filterNotNull())
-                    val lp = Path(); var debut = true
-                    pv.forEachIndexed { i, v -> if (v != null) { if (debut) lp.moveTo(x(i), yP(v)) else lp.lineTo(x(i), yP(v)); debut = false } }
-                    drawPath(lp, C.PlusValue, style = Stroke(1.8.dp.toPx(), join = StrokeJoin.Round))
-                    // zéro de la plus-value, si visible
-                    val z = yP(0.0); if (z in 0f..size.height) drawLine(C.PlusValue.copy(alpha = .35f), Offset(0f, z), Offset(size.width, z), 1.dp.toPx())
+                if (aInv) {
+                    val inv = { k: Int -> serie[k].investi ?: serie[k].valeur }
+                    val v = { k: Int -> serie[k].valeur }
+                    drawPath(aire({ k -> minOf(inv(k), v(k)) }, { 0.0 }), C.Investi.copy(alpha = .55f))
+                    drawPath(aire({ k -> maxOf(inv(k), v(k)) }, inv), C.PlusValue.copy(alpha = .75f))
+                    drawPath(aire(inv, { k -> minOf(inv(k), v(k)) }), C.Baisse.copy(alpha = .45f))
+                    val ligneInv = Path().apply { serie.indices.forEach { k -> if (k == 0) moveTo(x(k), y(inv(k))) else lineTo(x(k), y(inv(k))) } }
+                    drawPath(ligneInv, C.Investi, style = Stroke(1.2.dp.toPx()))
+                } else {
+                    drawPath(aire({ k -> serie[k].valeur }, { 0.0 }), C.Or.copy(alpha = .35f))
                 }
-                sel?.let { i ->
-                    drawLine(C.Discret, Offset(x(i), 0f), Offset(x(i), size.height), 1.dp.toPx(),
+                val ligne = Path().apply { serie.forEachIndexed { k, q -> if (k == 0) moveTo(x(k), y(q.valeur)) else lineTo(x(k), y(q.valeur)) } }
+                drawPath(ligne, if (aInv) C.PlusValue else C.Or, style = Stroke(1.6.dp.toPx(), join = StrokeJoin.Round))
+                sel?.let { k ->
+                    drawLine(C.Texte.copy(alpha = .6f), Offset(x(k), 0f), Offset(x(k), size.height), 1.dp.toPx(),
                         pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(6f, 5f)))
-                    drawCircle(C.Or, 4.dp.toPx(), Offset(x(i), yV(serie[i].valeur)))
-                    if (aPv) pv[i]?.let { v -> drawCircle(C.PlusValue, 4.dp.toPx(), Offset(x(i), echelle(pv.filterNotNull())(v))) }
+                    drawCircle(C.Texte, 4.dp.toPx(), Offset(x(k), y(serie[k].valeur)))
+                    serie[k].investi?.let { drawCircle(C.Investi, 3.5.dp.toPx(), Offset(x(k), y(it))) }
                 }
             }
-            // Bornes des deux échelles
-            val vs = serie.map { it.valeur }
-            Text(Portfolio.eur(vs.max()), color = C.Or.copy(alpha = .8f), fontSize = 9.sp, modifier = Modifier.align(Alignment.TopStart))
-            Text(Portfolio.eur(vs.min()), color = C.Or.copy(alpha = .8f), fontSize = 9.sp, modifier = Modifier.align(Alignment.BottomStart))
-            if (aPv) {
-                val ps = pv.filterNotNull()
-                Text(Portfolio.signe(ps.max()), color = C.PlusValue, fontSize = 9.sp, modifier = Modifier.align(Alignment.TopEnd))
-                Text(Portfolio.signe(ps.min()), color = C.PlusValue, fontSize = 9.sp, modifier = Modifier.align(Alignment.BottomEnd))
-            }
+            Text(Portfolio.eur(max / 1.05), color = C.Discret, fontSize = 9.sp, modifier = Modifier.align(Alignment.TopStart))
+            Text("0 €", color = C.Discret, fontSize = 9.sp, modifier = Modifier.align(Alignment.BottomStart))
         }
     }
 }
