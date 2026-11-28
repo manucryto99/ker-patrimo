@@ -2,6 +2,8 @@ package fr.eq.patrimo.ui
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -69,14 +71,26 @@ fun ReglagesEcran(vm: PortfolioViewModel, snack: SnackbarHostState, fermer: () -
         }
     ) { pad ->
         Column(Modifier.padding(pad).fillMaxSize().imePadding()) {
-            Row(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                listOf("Frais des contrats", "Frais des fonds", "Assistant").forEachIndexed { i, t ->
+            Row(Modifier.padding(horizontal = 16.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                listOf("Frais des contrats", "Frais des fonds", "Journal des parts", "Assistant").forEachIndexed { i, t ->
                     FilterChip(selected = section == i, onClick = { section = i }, label = { Text(t) })
                 }
             }
             when (section) {
                 0 -> FraisContrats(vm)
                 1 -> FraisFonds(vm)
+                2 -> {
+                    val j by vm.journalParts.collectAsStateWithLifecycle()
+                    LazyColumn(contentPadding = PaddingValues(16.dp)) {
+                        item {
+                            Text("Chaque jour, les frais de gestion des contrats d'assurance vie et PER sont déduits du nombre de parts, " +
+                                "comme le fait l'assureur. Chaque ajustement est noté ici (et dans la fiche de la ligne).",
+                                color = C.Discret, fontSize = 13.sp, modifier = Modifier.padding(bottom = 12.dp))
+                        }
+                        if (j.isEmpty()) item { Text("Aucun ajustement pour l'instant.", color = C.Discret) }
+                        else item { JournalLignes(j.take(150), avecLibelle = true) }
+                    }
+                }
                 else -> ReglagesAssistant(vm)
             }
         }

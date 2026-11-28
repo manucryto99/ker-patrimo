@@ -111,7 +111,8 @@ object PortfolioImporter {
             fraisAnnuels = rate(r.col("frais")),
             notes = r.col("notes"),
             dernierCours = num(r.col("dernier cours")), // affiché en attendant la 1re mise à jour en ligne
-            aSurveiller = surveiller
+            aSurveiller = surveiller,
+            partsAu = LocalDate.now().toEpochDay()
         )
     }
 }

@@ -39,7 +39,21 @@ data class Position(
     val plusHaut52s: Double? = null,       // en EUR
     val majCours: Long? = null,            // epoch millis
     val aSurveiller: Boolean = false,      // ligne soldée ou idée : suivie dans l'onglet « À surveiller », hors patrimoine
-    val disponibilites: String? = null     // contrats où le support est proposé, séparés par des virgules (saisie libre)
+    val disponibilites: String? = null,    // contrats où le support est proposé, séparés par des virgules (saisie libre)
+    val partsAu: Long? = null              // epochDay où le nombre de parts est exact (frais de contrat déjà déduits jusqu'à ce jour)
+)
+
+/** Journal des ajustements du nombre de parts (frais prélevés en parts, saisies, opérations). */
+@Entity(tableName = "journal_parts")
+data class JournalParts(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val epochDay: Long,
+    val positionId: Long,
+    val libelle: String,
+    val contrat: String,
+    val avant: Double,
+    val apres: Double,
+    val motif: String
 )
 
 /**
@@ -163,6 +177,12 @@ abstract class PortfolioDao {
     @Query("DELETE FROM historique WHERE source != 'auto'")
     abstract suspend fun viderHistoriqueImporte()
 
+    @Query("SELECT * FROM journal_parts ORDER BY id DESC LIMIT 300")
+    abstract fun observeJournal(): Flow<List<JournalParts>>
+
+    @androidx.room.Insert
+    abstract suspend fun insertJournal(items: List<JournalParts>)
+
     @Query("SELECT COUNT(*) FROM prices")
     abstract suspend fun priceCount(): Int
 
@@ -173,7 +193,7 @@ abstract class PortfolioDao {
     abstract suspend fun snapshotsSince(from: Long): List<Snapshot>
 }
 
-@Database(entities = [Position::class, Contrat::class, PricePoint::class, Snapshot::class, FondsCatalogue::class, PointHistorique::class], version = 8, exportSchema = false)
+@Database(entities = [Position::class, Contrat::class, PricePoint::class, Snapshot::class, FondsCatalogue::class, PointHistorique::class, JournalParts::class], version = 9, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun dao(): PortfolioDao
 
@@ -191,6 +211,12 @@ abstract class AppDatabase : RoomDatabase() {
                 .addMigrations(object : androidx.room.migration.Migration(5, 6) {
                     override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
                         db.execSQL("CREATE TABLE IF NOT EXISTS `catalogue` (`contrat` TEXT NOT NULL, `isin` TEXT NOT NULL, `libelle` TEXT NOT NULL, `etablissement` TEXT NOT NULL, PRIMARY KEY(`contrat`, `isin`))")
+                    }
+                })
+                .addMigrations(object : androidx.room.migration.Migration(8, 9) {
+                    override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                        db.execSQL("ALTER TABLE positions ADD COLUMN partsAu INTEGER")
+                        db.execSQL("CREATE TABLE IF NOT EXISTS `journal_parts` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `epochDay` INTEGER NOT NULL, `positionId` INTEGER NOT NULL, `libelle` TEXT NOT NULL, `contrat` TEXT NOT NULL, `avant` REAL NOT NULL, `apres` REAL NOT NULL, `motif` TEXT NOT NULL)")
                     }
                 })
                 .addMigrations(object : androidx.room.migration.Migration(7, 8) {

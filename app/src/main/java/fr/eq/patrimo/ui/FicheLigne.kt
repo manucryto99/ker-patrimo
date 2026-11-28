@@ -1,6 +1,7 @@
 package fr.eq.patrimo.ui
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -50,6 +51,7 @@ fun FicheLigne(
     enregistrer: (Position) -> Unit,
     supprimer: (Position) -> Unit,
     operation: (Operation) -> Unit,
+    journal: List<fr.eq.patrimo.data.JournalParts> = emptyList(),
     fermer: () -> Unit
 ) {
     val p0 = initiale
@@ -116,6 +118,8 @@ fun FicheLigne(
                     if (type != "Crypto" && type != "Action")
                         OutlinedTextField(frais, { frais = it }, label = { Text("Frais courants du fonds (%/an)") }, singleLine = true, keyboardOptions = dec, modifier = Modifier.fillMaxWidth())
                 }
+                // Journal des parts de cette ligne (frais prélevés en parts, saisies, opérations)
+                if (journal.isNotEmpty()) JournalLignes(journal.take(12))
                 OutlinedTextField(dateAchat, { dateAchat = it }, label = { Text("Date d'achat (jj/mm/aaaa) — sert à reconstituer l'historique") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(notes, { notes = it }, label = { Text("Notes") }, modifier = Modifier.fillMaxWidth())
                 if (type != "Crypto") {
@@ -196,4 +200,19 @@ fun FicheLigne(
         },
         dismissButton = { TextButton(onClick = fermer) { Text("Annuler") } }
     )
+}
+
+/** Petite « bulle » listant les derniers ajustements du nombre de parts. */
+@Composable
+fun JournalLignes(journal: List<fr.eq.patrimo.data.JournalParts>, avecLibelle: Boolean = false) {
+    val f = java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy")
+    fun n(x: Double) = String.format(java.util.Locale.FRANCE, "%.4f", x)
+    Column(Modifier.fillMaxWidth().background(C.Carte2, androidx.compose.foundation.shape.RoundedCornerShape(10.dp)).padding(10.dp)) {
+        Text("Journal des parts", color = C.Or, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+        journal.forEach { j ->
+            Text((if (avecLibelle) "${j.libelle} (${j.contrat})\n" else "") +
+                "${java.time.LocalDate.ofEpochDay(j.epochDay).format(f)} · ${n(j.avant)} → ${n(j.apres)} · ${j.motif}",
+                color = C.Discret, fontSize = 11.sp, modifier = Modifier.padding(top = 3.dp))
+        }
+    }
 }

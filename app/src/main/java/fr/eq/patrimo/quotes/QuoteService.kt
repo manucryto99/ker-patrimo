@@ -24,8 +24,34 @@ class QuoteService(private val dao: PortfolioDao) {
 
     private companion object { val historiqueLongCharge: MutableSet<String> = java.util.Collections.synchronizedSet(HashSet()) }
 
+    /**
+     * Chaque jour : déduit des parts les frais de gestion des contrats d'assurance vie / PER (prélevés en parts par l'assureur),
+     * met à jour le nombre de parts et trace chaque ajustement dans le journal.
+     */
+    suspend fun appliquerFraisEnParts() {
+        val auj = LocalDate.now().toEpochDay()
+        val cs = dao.contrats()
+        val journal = ArrayList<fr.eq.patrimo.data.JournalParts>()
+        for (p in dao.positions()) {
+            if (p.aSurveiller || p.quantite <= 0 || p.pru <= 0 || !fr.eq.patrimo.domain.Frais.estAssurance(p.enveloppe)) continue
+            val c = cs.firstOrNull { it.etablissement == p.etablissement && it.contrat == p.contrat } ?: continue
+            if (c.fraisGestionUc <= 0) continue
+            val depuis = p.partsAu ?: c.dateReleve
+            if (depuis == null) { dao.update(p.copy(partsAu = auj)); continue }   // point de départ : aujourd'hui
+            val jours = auj - depuis
+            if (jours < 1) continue
+            val nq = p.quantite * Math.pow(1 - c.fraisGestionUc, jours / 365.0)
+            dao.update(p.copy(quantite = nq, partsAu = auj))
+            journal += fr.eq.patrimo.data.JournalParts(epochDay = auj, positionId = p.id, libelle = p.libelle, contrat = p.contrat,
+                avant = p.quantite, apres = nq,
+                motif = "Frais de gestion ${String.format(java.util.Locale.FRANCE, "%.2f", c.fraisGestionUc * 100)} %/an sur $jours j")
+        }
+        if (journal.isNotEmpty()) dao.insertJournal(journal)
+    }
+
     suspend fun refreshAll(withHistory: Boolean, range: String = "5y", avance: (Int, Int) -> Unit = { _, _ -> }): RefreshResult = withContext(Dispatchers.IO) {
         fxCache.clear()
+        appliquerFraisEnParts()
         var ok = 0
         val failed = ArrayList<String>()
         val toutes = dao.positions()

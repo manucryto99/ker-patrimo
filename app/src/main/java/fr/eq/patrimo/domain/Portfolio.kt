@@ -90,7 +90,8 @@ object Portfolio {
             val c = contratDe(p)
             val cote = p.quantite > 0 && p.pru > 0
             val assurance = Frais.estAssurance(p.enveloppe)
-            val t = annees(c.dateReleve ?: p.dateAchat, aujourdhui)
+            // Parts exactes au « partsAu » de la ligne (sinon à la date de relevé du contrat) ; ensuite érosion par les frais
+            val t = annees(p.partsAu ?: c.dateReleve, aujourdhui)
             val parts = if (cote && assurance && c.fraisGestionUc > 0) p.quantite * (1 - c.fraisGestionUc).pow(t) else p.quantite
             val valeur = when {
                 cote -> parts * (p.dernierCours ?: p.pru)

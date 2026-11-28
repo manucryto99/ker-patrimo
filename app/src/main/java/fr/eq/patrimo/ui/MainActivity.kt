@@ -440,7 +440,9 @@ fun DetailTitres(vm: PortfolioViewModel, lignes: List<Ligne>, vars: Map<Long, fr
     // Fiche ouverte : null = fermée ; Position(id = 0) = nouvelle ligne
     var fiche by remember { mutableStateOf<Position?>(null) }
     var nouvelle by remember { mutableStateOf(false) }
-    if (fiche != null || nouvelle) FicheLigne(fiche, contrats, false, vm::enregistrerPosition, vm::supprimerPosition, vm::appliquer) { fiche = null; nouvelle = false }
+    val journalParts by vm.journalParts.collectAsStateWithLifecycle()
+    if (fiche != null || nouvelle) FicheLigne(fiche, contrats, false, vm::enregistrerPosition, vm::supprimerPosition, vm::appliquer,
+        journal = journalParts.filter { it.positionId == fiche?.id }) { fiche = null; nouvelle = false }
     if (lignes.isEmpty()) return
     val vues = lignes.sortedBy {
         when (tri) { Tri.INVESTI -> it.investi; Tri.VALEUR -> it.valeur; Tri.GAIN -> it.gain; Tri.PERF -> it.perf }

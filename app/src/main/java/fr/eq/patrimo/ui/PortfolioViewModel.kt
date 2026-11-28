@@ -501,11 +501,29 @@ class PortfolioViewModel(app: Application, val base: String = "patrimo.db") : An
         val m = _chat.value.getOrNull(index)?.takeIf { it.etat == fr.eq.patrimo.assistant.Etat.EN_ATTENTE } ?: return
         _chat.value = _chat.value.toMutableList().also { it[index] = m.copy(etat = fr.eq.patrimo.assistant.Etat.VALIDEE) }
         viewModelScope.launch {
+            val avant = dao.positions().associateBy { it.id }
             val resultats = m.operations.map { fr.eq.patrimo.domain.Operations.appliquer(dao, it) }
+            tracerParts(avant, "Opération (assistant)")
             _chat.value = _chat.value + Message("assistant", resultats.joinToString("\n") { "✓ $it" })
             historyVersion.update { it + 1 }
         }
     }
+
+    /** Après une opération : lignes dont le nombre de parts a changé → partsAu = aujourd'hui et entrée au journal. */
+    private suspend fun tracerParts(avant: Map<Long, fr.eq.patrimo.data.Position>, motif: String) {
+        val auj = LocalDate.now().toEpochDay()
+        val j = dao.positions().mapNotNull { p ->
+            val a = avant[p.id]
+            if (a != null && a.quantite == p.quantite) return@mapNotNull null
+            dao.update(p.copy(partsAu = auj))
+            fr.eq.patrimo.data.JournalParts(epochDay = auj, positionId = p.id, libelle = p.libelle, contrat = p.contrat,
+                avant = a?.quantite ?: 0.0, apres = p.quantite, motif = motif)
+        }
+        if (j.isNotEmpty()) dao.insertJournal(j)
+    }
+
+    /** Journal des ajustements de parts (300 derniers). */
+    val journalParts = dao.observeJournal().stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     fun annuler(index: Int) {
         val m = _chat.value.getOrNull(index) ?: return
@@ -517,8 +535,12 @@ class PortfolioViewModel(app: Application, val base: String = "patrimo.db") : An
         viewModelScope.launch {
             // Un ISIN changé : on oublie la source de cotation mémorisée
             val ancien = dao.positions().firstOrNull { it.id == p.id }
-            val q = if (ancien != null && ancien.isin != p.isin) p.copy(symbole = null, source = null, dernierCours = null) else p
+            var q = if (ancien != null && ancien.isin != p.isin) p.copy(symbole = null, source = null, dernierCours = null) else p
+            val auj = LocalDate.now().toEpochDay()
+            if (ancien == null || ancien.quantite != q.quantite) q = q.copy(partsAu = auj)
             if (q.id == 0L) dao.insert(q) else dao.update(q)
+            if (ancien != null && ancien.quantite != q.quantite) dao.insertJournal(listOf(fr.eq.patrimo.data.JournalParts(epochDay = auj,
+                positionId = q.id, libelle = q.libelle, contrat = q.contrat, avant = ancien.quantite, apres = q.quantite, motif = "Saisie manuelle")))
             _info.value = "« ${p.libelle} » enregistré"
             if (q.isin != null && (ancien == null || ancien.isin != q.isin)) refresh(silencieux = true)
         }
@@ -529,6 +551,10 @@ class PortfolioViewModel(app: Application, val base: String = "patrimo.db") : An
     }
 
     fun appliquer(op: fr.eq.patrimo.domain.Operation) {
-        viewModelScope.launch { _info.value = fr.eq.patrimo.domain.Operations.appliquer(dao, op) }
+        viewModelScope.launch {
+            val avant = dao.positions().associateBy { it.id }
+            _info.value = fr.eq.patrimo.domain.Operations.appliquer(dao, op)
+            tracerParts(avant, "Opération")
+        }
     }
 }
