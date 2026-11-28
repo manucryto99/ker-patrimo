@@ -92,7 +92,9 @@ object PortfolioImporter {
             ?: num(r.col("pru", "prix de revient"))
             ?: if (investi != null && qty > 0) investi / qty else 0.0
         val manuelle = num(r.col("valeur manuelle", "encours"))
-        if ((qty <= 0 || pru <= 0) && manuelle == null) return null
+        // Colonne « À surveiller » (oui / x) : ligne suivie sans parts détenues
+        val surveiller = r.col("a surveiller", "surveiller")?.trim()?.lowercase()?.let { it == "oui" || it == "x" || it == "1" || it == "true" } == true
+        if ((qty <= 0 || pru <= 0) && manuelle == null && !surveiller) return null
         val etab = r.col("etablissement", "plateforme") ?: ""
         return Position(
             enveloppe = enveloppe,
@@ -108,7 +110,8 @@ object PortfolioImporter {
             dateAchat = date(r.col("date")),
             fraisAnnuels = rate(r.col("frais")),
             notes = r.col("notes"),
-            dernierCours = num(r.col("dernier cours")) // affiché en attendant la 1re mise à jour en ligne
+            dernierCours = num(r.col("dernier cours")), // affiché en attendant la 1re mise à jour en ligne
+            aSurveiller = surveiller
         )
     }
 }
