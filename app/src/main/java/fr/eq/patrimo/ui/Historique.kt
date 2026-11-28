@@ -70,7 +70,7 @@ fun Historique(vm: PortfolioViewModel) {
             return@Column
         }
         LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp), contentPadding = PaddingValues(vertical = 8.dp)) {
-            items(portefeuilles) { p -> FilterChip(selected = p == choix, onClick = { choix = p }, label = { Text(if (p == "TOTAL") "Total" else p, fontSize = 12.sp) }) }
+            items(portefeuilles) { p -> FilterChip(selected = p == choix, onClick = { choix = p }, label = { Text(if (p == "TOTAL") "Tout" else p, fontSize = 12.sp) }) }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             jours.keys.forEach { d -> FilterChip(selected = d == duree, onClick = { duree = d }, label = { Text(d, fontSize = 12.sp) }, modifier = Modifier.height(30.dp)) }

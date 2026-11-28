@@ -44,12 +44,12 @@ object HistoriqueImporter {
             if (cPort >= 0 && cVal >= 0) {
                 val p = l.getOrNull(cPort)?.trim().orEmpty().ifEmpty { "TOTAL" }
                 val v = l.getOrNull(cVal)?.let(::montant) ?: continue
-                res += PointHistorique(d, if (norm(p) == "total") "TOTAL" else p, v, l.getOrNull(cInv)?.let(::montant), "import")
+                res += PointHistorique(d, if (norm(p) == "total" || norm(p) == "tout") "TOTAL" else p, v, l.getOrNull(cInv)?.let(::montant), "import")
             } else {
                 lignes[iEntete].forEachIndexed { i, nom ->
                     if (i == cDate || nom.isBlank() || i == cInv) return@forEachIndexed
                     val v = l.getOrNull(i)?.let(::montant) ?: return@forEachIndexed
-                    res += PointHistorique(d, if (norm(nom) == "total") "TOTAL" else nom.trim(), v, null, "import")
+                    res += PointHistorique(d, if (norm(nom) == "total" || norm(nom) == "tout") "TOTAL" else nom.trim(), v, null, "import")
                 }
             }
         }
